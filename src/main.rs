@@ -1,19 +1,29 @@
 use crossterm::{
-    event::{poll, read, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode},
+    event::{poll, read, DisableMouseCapture, EnableMouseCapture, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use std::{io, process::exit, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{sleep_until, Instant};
+use tui::{
+    backend::{Backend, CrosstermBackend},
+    widgets::{Block, Borders},
+    Terminal,
+};
 
-struct EventLoop {
+struct EventLoop<B: Backend> {
+    terminal: Terminal<B>,
     done: bool,
 }
 
-impl EventLoop {
-    pub fn new() -> EventLoop {
-        EventLoop { done: false }
+impl<B: Backend> EventLoop<B> {
+    pub fn new(terminal: Terminal<B>) -> EventLoop<B> {
+        EventLoop::<B> {
+            terminal,
+            done: false,
+        }
     }
 
     pub async fn run(&mut self) -> io::Result<()> {
@@ -41,7 +51,7 @@ impl EventLoop {
                 crossterm::event::Event::FocusGained => {}
                 crossterm::event::Event::FocusLost => {}
                 crossterm::event::Event::Key(key) => {
-                    if key.code == KeyCode::Esc {
+                    if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
                         self.done = true;
                     }
                 }
@@ -50,6 +60,20 @@ impl EventLoop {
                 crossterm::event::Event::Resize(_, _) => {}
             }
         }
+
+        self.draw()?;
+
+        Ok(())
+    }
+
+    fn draw(&mut self) -> Result<(), io::Error> {
+        self.terminal.draw(|f| {
+            let size = f.size();
+            let block = Block::default().title("Heks").borders(Borders::ALL);
+            f.render_widget(block, size);
+        })?;
+
+        self.terminal.hide_cursor()?;
 
         Ok(())
     }
@@ -76,14 +100,35 @@ fn setup_signal_handler() {
     });
 }
 
+struct TerminalSetup {}
+
+impl TerminalSetup {
+    fn new() -> Result<TerminalSetup, io::Error> {
+        execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+        enable_raw_mode()?;
+
+        Ok(TerminalSetup {})
+    }
+}
+
+impl Drop for TerminalSetup {
+    fn drop(&mut self) {
+        disable_raw_mode().unwrap_or(());
+        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)
+            .expect("unable to leave alternate screen/disable mouse capture");
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
-    enable_raw_mode()?;
+    let mut _terminal_setup = TerminalSetup::new()?;
+
     setup_signal_handler();
 
-    let mut event_loop = EventLoop::new();
+    let backend = CrosstermBackend::new(io::stdout());
+    let terminal = Terminal::new(backend)?;
+    let mut event_loop = EventLoop::new(terminal);
     event_loop.run().await?;
-    disable_raw_mode()?;
 
     Ok(())
 }
