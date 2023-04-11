@@ -4,7 +4,11 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::{stream::FuturesUnordered, StreamExt};
-use std::{io, process::exit, time::Duration};
+use std::{
+    io,
+    sync::{atomic::AtomicBool, Arc},
+    time::Duration,
+};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{sleep_until, Instant};
 use tui::{
@@ -15,21 +19,21 @@ use tui::{
 
 struct EventLoop<B: Backend> {
     terminal: Terminal<B>,
-    done: bool,
+    pub done: Arc<AtomicBool>,
 }
 
 impl<B: Backend> EventLoop<B> {
-    pub fn new(terminal: Terminal<B>) -> EventLoop<B> {
+    pub fn new(terminal: Terminal<B>) -> Self {
         EventLoop::<B> {
             terminal,
-            done: false,
+            done: Arc::new(AtomicBool::new(false)),
         }
     }
 
     pub async fn run(&mut self) -> io::Result<()> {
         let mut next_tick = Instant::now();
 
-        while !self.done {
+        while !self.done.load(std::sync::atomic::Ordering::Acquire) {
             sleep_until(next_tick).await;
 
             self.tick()?;
@@ -52,7 +56,7 @@ impl<B: Backend> EventLoop<B> {
                 crossterm::event::Event::FocusLost => {}
                 crossterm::event::Event::Key(key) => {
                     if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
-                        self.done = true;
+                        self.done.store(true, std::sync::atomic::Ordering::Release);
                     }
                 }
                 crossterm::event::Event::Mouse(_) => {}
@@ -79,7 +83,7 @@ impl<B: Backend> EventLoop<B> {
     }
 }
 
-fn setup_signal_handler() {
+fn install_exit_handler<F: Fn() + Send + 'static>(handler: F) {
     tokio::spawn(async move {
         let mut handlers: Vec<_> = [
             SignalKind::hangup(),
@@ -95,8 +99,7 @@ fn setup_signal_handler() {
 
         signals.next().await;
 
-        let _ = disable_raw_mode();
-        exit(1);
+        handler();
     });
 }
 
@@ -109,25 +112,35 @@ impl TerminalSetup {
 
         Ok(TerminalSetup {})
     }
-}
 
-impl Drop for TerminalSetup {
-    fn drop(&mut self) {
+    fn cleanup(&mut self) {
         disable_raw_mode().unwrap_or(());
         execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)
             .expect("unable to leave alternate screen/disable mouse capture");
     }
 }
 
+impl Drop for TerminalSetup {
+    fn drop(&mut self) {
+        self.cleanup();
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
-    let mut _terminal_setup = TerminalSetup::new()?;
-
-    setup_signal_handler();
-
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Terminal::new(backend)?;
     let mut event_loop = EventLoop::new(terminal);
+
+    let _terminal_setup = TerminalSetup::new()?;
+
+    let done_clone = Arc::clone(&event_loop.done);
+    install_exit_handler(move || {
+        // We might want to hold onto the signal so we can reflect that in our
+        // exit code, but this is fine for now.
+        done_clone.store(true, std::sync::atomic::Ordering::Release);
+    });
+
     event_loop.run().await?;
 
     Ok(())
