@@ -13,19 +13,50 @@ use tokio::signal::unix::{signal, SignalKind};
 use tokio::time::{sleep_until, Instant};
 use tui::{
     backend::{Backend, CrosstermBackend},
-    widgets::{Block, Borders},
+    layout::{Alignment, Constraint, Direction, Layout},
+    widgets::Block,
     Terminal,
 };
 
-struct EventLoop<B: Backend> {
+struct App<B: Backend> {
     terminal: Terminal<B>,
+}
+
+impl<B: Backend> App<B> {
+    fn new(mut terminal: Terminal<B>) -> Result<Self, io::Error> {
+        terminal.hide_cursor()?;
+        Ok(App { terminal })
+    }
+
+    fn draw(&mut self) -> Result<(), io::Error> {
+        self.terminal.draw(|f| {
+            let layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50)].as_ref())
+                .split(f.size());
+
+            // TODO: Set this to something like " - filename.bin"
+            let title_info = "";
+            let title = Block::default()
+                .title(format!("Heks{}", title_info))
+                .title_alignment(Alignment::Center);
+
+            f.render_widget(title, layout[0]);
+        })?;
+
+        Ok(())
+    }
+}
+
+struct EventLoop<B: Backend> {
+    pub app: App<B>,
     pub done: Arc<AtomicBool>,
 }
 
 impl<B: Backend> EventLoop<B> {
-    pub fn new(terminal: Terminal<B>) -> Self {
+    pub fn new(app: App<B>) -> Self {
         EventLoop::<B> {
-            terminal,
+            app,
             done: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -65,17 +96,7 @@ impl<B: Backend> EventLoop<B> {
             }
         }
 
-        self.draw()?;
-
-        Ok(())
-    }
-
-    fn draw(&mut self) -> Result<(), io::Error> {
-        self.terminal.draw(|f| {
-            let size = f.size();
-            let block = Block::default().title("Heks").borders(Borders::ALL);
-            f.render_widget(block, size);
-        })?;
+        self.app.draw()?;
 
         Ok(())
     }
@@ -127,9 +148,9 @@ impl Drop for TerminalSetup {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
-    let mut terminal = Terminal::new(backend)?;
-    terminal.hide_cursor()?;
-    let mut event_loop = EventLoop::new(terminal);
+    let terminal = Terminal::new(backend)?;
+    let app = App::new(terminal)?;
+    let mut event_loop = EventLoop::new(app);
 
     let _terminal_setup = TerminalSetup::new()?;
 
