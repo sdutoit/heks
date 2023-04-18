@@ -77,8 +77,6 @@ impl<B: Backend> EventLoop<B> {
             f.render_widget(block, size);
         })?;
 
-        self.terminal.hide_cursor()?;
-
         Ok(())
     }
 }
@@ -129,7 +127,8 @@ impl Drop for TerminalSetup {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
-    let terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::new(backend)?;
+    terminal.hide_cursor()?;
     let mut event_loop = EventLoop::new(terminal);
 
     let _terminal_setup = TerminalSetup::new()?;
