@@ -1,5 +1,5 @@
 use crossterm::{
-    event::{poll, read, DisableMouseCapture, EnableMouseCapture, KeyCode},
+    event::{poll, read, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -260,8 +260,8 @@ impl<B: Backend> EventLoop<B> {
 
             self.tick()?;
 
-            let now = Instant::now();
             next_tick += Duration::from_micros(16667);
+            let now = Instant::now();
             if next_tick < now {
                 next_tick = now;
             }
@@ -277,7 +277,11 @@ impl<B: Backend> EventLoop<B> {
                 crossterm::event::Event::FocusGained => {}
                 crossterm::event::Event::FocusLost => {}
                 crossterm::event::Event::Key(key) => {
-                    if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
+                    if (key.modifiers.is_empty()
+                        && (key.code == KeyCode::Esc || key.code == KeyCode::Char('q')))
+                        || (key.modifiers == KeyModifiers::CONTROL
+                            && key.code == KeyCode::Char('c'))
+                    {
                         self.done.store(true, std::sync::atomic::Ordering::Release);
                     }
                 }
