@@ -97,27 +97,42 @@ fn render_unicode(bytes: &mut [u8]) -> String {
     bytes
         .iter()
         .map(|&c| match c {
-            0 => '⓪',
-            1 => '①',
-            2 => '②',
-            3 => '③',
-            4 => '④',
-            5 => '⑤',
-            6 => '⑥',
-            7 => '⑦',
-            8 => '⑧',
-            9 => '⑨',
-            0xa => 'Ⓐ',
-            0xb => 'Ⓑ',
-            0xc => 'Ⓒ',
-            0xd => 'Ⓓ',
-            0xe => 'Ⓔ',
-            0xf => 'Ⓕ',
-            _ => c as char,
+            0 => "⓪ ".to_string(),
+            1 => "① ".to_string(),
+            2 => "② ".to_string(),
+            3 => "③ ".to_string(),
+            4 => "④ ".to_string(),
+            5 => "⑤ ".to_string(),
+            6 => "⑥ ".to_string(),
+            7 => "⑦ ".to_string(),
+            8 => "⑧ ".to_string(),
+            9 => "⑨ ".to_string(),
+            0xa => "Ⓐ ".to_string(),
+            0xb => "Ⓑ ".to_string(),
+            0xc => "Ⓒ ".to_string(),
+            0xd => "Ⓓ ".to_string(),
+            0xe => "Ⓔ ".to_string(),
+            0xf => "Ⓕ ".to_string(),
+            0x10 => "0̚ ".to_string(),
+            0x11 => "1̚ ".to_string(),
+            0x12 => "2̚ ".to_string(),
+            0x13 => "3̚ ".to_string(),
+            0x14 => "4̚ ".to_string(),
+            0x15 => "5̚ ".to_string(),
+            0x16 => "6̚ ".to_string(),
+            0x17 => "7̚ ".to_string(),
+            0x18 => "8̚ ".to_string(),
+            0x19 => "9̚ ".to_string(),
+            0x1a => "a̚ ".to_string(),
+            0x1b => "b̚ ".to_string(),
+            0x1c => "c̚ ".to_string(),
+            0x1d => "d̚ ".to_string(),
+            0x1e => "e̚ ".to_string(),
+            0x1f => "f̚ ".to_string(),
+            _ => format!("{} ", c as char),
         })
-        .for_each(|c| {
-            result.push(c);
-            result.push(' ');
+        .for_each(|s| {
+            result.push_str(s.as_str());
             column += 1;
             if column == COLUMNS {
                 result.push('\n');
@@ -167,7 +182,10 @@ impl<B: Backend> App<B> {
                 .split(stack[1]);
 
             // TODO use _offset and _size
-            let buffer = b"\x09\x00\x06\x00hello\x0a\x0b\x0c\x0d\x0e\x0fworld01234567890";
+            let buffer = b"\x09\x00\x06\x00hello\
+                           \x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+                           \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\
+                           world01234567890";
             let get_data = |_offset, _size| buffer.to_vec();
 
             let hex_display = HexDisplay::default().get_data(get_data);
