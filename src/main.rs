@@ -14,9 +14,63 @@ use tokio::time::{sleep_until, Instant};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
-    widgets::Block,
+    widgets::{Block, Paragraph, Widget},
     Terminal,
 };
+
+struct UnicodeDisplay<'b, GetData: Fn(u32, u32) -> &'b [u8]> {
+    get_data: Option<GetData>,
+}
+
+impl<'b, GetData: Fn(u32, u32) -> &'b [u8]> UnicodeDisplay<'b, GetData> {
+    fn default() -> Self {
+        UnicodeDisplay { get_data: None }
+    }
+
+    fn get_data(mut self, get_data: GetData) -> Self {
+        self.get_data = Some(get_data);
+        self
+    }
+}
+
+fn render_unicode(bytes: &mut [u8]) -> String {
+    let mut result = String::new();
+    bytes
+        .iter()
+        .map(|&c| match c {
+            0 => 'Ø',
+            1 => '①',
+            2 => '②',
+            3 => '③',
+            4 => '④',
+            5 => '⑤',
+            6 => '⑥',
+            7 => '⑦',
+            8 => '⑧',
+            9 => '⑨',
+            0xa => '🅐',
+            0xb => '🅑',
+            0xc => '🅒',
+            0xd => '🅓',
+            0xe => '🅔',
+            0xf => '🅕',
+            _ => c as char,
+        })
+        .for_each(|c| {
+            result.push(c);
+            result.push(' ');
+        });
+    result
+}
+
+impl<'b, GetData: Fn(u32, u32) -> &'b [u8]> Widget for UnicodeDisplay<'b, GetData> {
+    fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
+        let mut data = (self.get_data.unwrap())(0, 1024).to_vec();
+        let text = render_unicode(&mut data[..]);
+
+        Paragraph::new(text).render(area, buf);
+    }
+}
 
 struct App<B: Backend> {
     terminal: Terminal<B>,
@@ -30,9 +84,9 @@ impl<B: Backend> App<B> {
 
     fn draw(&mut self) -> Result<(), io::Error> {
         self.terminal.draw(|f| {
-            let layout = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50)].as_ref())
+            let stack = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Max(1), Constraint::Min(0)].as_ref())
                 .split(f.size());
 
             // TODO: Set this to something like " - filename.bin"
@@ -41,7 +95,16 @@ impl<B: Backend> App<B> {
                 .title(format!("Heks{}", title_info))
                 .title_alignment(Alignment::Center);
 
-            f.render_widget(title, layout[0]);
+            f.render_widget(title, stack[0]);
+
+            let buffer = b"\x09\x00\x06\x00hello\x0a\x0b\x0c\x0d\x0e\x0f";
+
+            // let buffer = b"\x09\x00\x06\x00hello";
+            // let buffer = b"\x00hello";
+            // TODO use _offset and _size
+            let window = UnicodeDisplay::default().get_data(|_offset, _size| buffer);
+
+            f.render_widget(window, stack[1]);
         })?;
 
         Ok(())
