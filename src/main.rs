@@ -164,9 +164,7 @@ fn render_unicode(bytes: &mut [u8]) -> String {
             0x1d => "d̚ ".to_string(),
             0x1e => "e̚ ".to_string(),
             0x1f => "f̚ ".to_string(),
-            0x7f => "← ".to_string(),
-            0xfa => "ᶠᵃ".to_string(),
-            0x80..=0xff => render_unicode_byte(c).to_string(),
+            0x7f..=0xff => render_unicode_byte(c).to_string(),
             _ => format!("{} ", c as char),
         })
         .for_each(|s| {
