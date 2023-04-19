@@ -18,27 +18,86 @@ use tui::{
     Terminal,
 };
 
-struct UnicodeDisplay<'b, GetData: Fn(u32, u32) -> &'b [u8]> {
-    get_data: Option<GetData>,
+// TODO would be nice to return a slice, but lifetime issues make that more
+// difficult.
+trait GetData: Fn(u32, u32) -> Vec<u8> {}
+
+impl<F> GetData for F where F: Fn(u32, u32) -> Vec<u8> {}
+
+struct HexDisplay<G: GetData> {
+    get_data: Option<G>,
 }
 
-impl<'b, GetData: Fn(u32, u32) -> &'b [u8]> UnicodeDisplay<'b, GetData> {
+impl<G: GetData> HexDisplay<G> {
+    fn default() -> Self {
+        HexDisplay { get_data: None }
+    }
+
+    fn get_data(mut self, get_data: G) -> Self {
+        self.get_data = Some(get_data);
+        self
+    }
+}
+
+const COLUMNS: u8 = 2 * 8;
+
+fn render_hex(bytes: &[u8]) -> String {
+    let mut result = String::new();
+
+    const BLOCKSIZE: u8 = 2;
+    let mut column = 0;
+
+    bytes.iter().for_each(|value| {
+        result.push_str(format!("{:02x}", value).as_str());
+        column += 1;
+        if column == COLUMNS {
+            result.push('\n');
+            column = 0;
+        } else if column % BLOCKSIZE == 0 {
+            result.push(' ');
+        }
+    });
+
+    while column < COLUMNS {
+        result.push_str("..");
+        column += 1;
+        if column < COLUMNS && column % BLOCKSIZE == 0 {
+            result.push(' ');
+        }
+    }
+
+    result
+}
+
+impl<G: GetData> Widget for HexDisplay<G> {
+    fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
+        let data = (self.get_data.unwrap())(0, 1024);
+        Paragraph::new(render_hex(data.as_ref())).render(area, buf);
+    }
+}
+
+struct UnicodeDisplay<G: GetData> {
+    get_data: Option<G>,
+}
+
+impl<G: GetData> UnicodeDisplay<G> {
     fn default() -> Self {
         UnicodeDisplay { get_data: None }
     }
 
-    fn get_data(mut self, get_data: GetData) -> Self {
+    fn get_data(mut self, get_data: G) -> Self {
         self.get_data = Some(get_data);
         self
     }
 }
 
 fn render_unicode(bytes: &mut [u8]) -> String {
+    let mut column = 0;
     let mut result = String::new();
     bytes
         .iter()
         .map(|&c| match c {
-            0 => 'Ø',
+            0 => '⓪',
             1 => '①',
             2 => '②',
             3 => '③',
@@ -48,24 +107,29 @@ fn render_unicode(bytes: &mut [u8]) -> String {
             7 => '⑦',
             8 => '⑧',
             9 => '⑨',
-            0xa => '🅐',
-            0xb => '🅑',
-            0xc => '🅒',
-            0xd => '🅓',
-            0xe => '🅔',
-            0xf => '🅕',
+            0xa => 'Ⓐ',
+            0xb => 'Ⓑ',
+            0xc => 'Ⓒ',
+            0xd => 'Ⓓ',
+            0xe => 'Ⓔ',
+            0xf => 'Ⓕ',
             _ => c as char,
         })
         .for_each(|c| {
             result.push(c);
             result.push(' ');
+            column += 1;
+            if column == COLUMNS {
+                result.push('\n');
+                column = 0;
+            }
         });
     result
 }
 
-impl<'b, GetData: Fn(u32, u32) -> &'b [u8]> Widget for UnicodeDisplay<'b, GetData> {
+impl<G: GetData> Widget for UnicodeDisplay<G> {
     fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
-        let mut data = (self.get_data.unwrap())(0, 1024).to_vec();
+        let mut data = (self.get_data.unwrap())(0, 1024);
         let text = render_unicode(&mut data[..]);
 
         Paragraph::new(text).render(area, buf);
@@ -86,7 +150,7 @@ impl<B: Backend> App<B> {
         self.terminal.draw(|f| {
             let stack = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Max(1), Constraint::Min(0)].as_ref())
+                .constraints([Constraint::Min(1), Constraint::Min(0)].as_ref())
                 .split(f.size());
 
             // TODO: Set this to something like " - filename.bin"
@@ -97,14 +161,20 @@ impl<B: Backend> App<B> {
 
             f.render_widget(title, stack[0]);
 
-            let buffer = b"\x09\x00\x06\x00hello\x0a\x0b\x0c\x0d\x0e\x0f";
+            let file_display = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(stack[1]);
 
-            // let buffer = b"\x09\x00\x06\x00hello";
-            // let buffer = b"\x00hello";
             // TODO use _offset and _size
-            let window = UnicodeDisplay::default().get_data(|_offset, _size| buffer);
+            let buffer = b"\x09\x00\x06\x00hello\x0a\x0b\x0c\x0d\x0e\x0fworld01234567890";
+            let get_data = |_offset, _size| buffer.to_vec();
 
-            f.render_widget(window, stack[1]);
+            let hex_display = HexDisplay::default().get_data(get_data);
+            f.render_widget(hex_display, file_display[0]);
+
+            let unicode_display = UnicodeDisplay::default().get_data(get_data);
+            f.render_widget(unicode_display, file_display[1]);
         })?;
 
         Ok(())
