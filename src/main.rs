@@ -91,6 +91,41 @@ impl<G: GetData> UnicodeDisplay<G> {
     }
 }
 
+fn unicode_superscript_hex(byte: u8) -> char {
+    match byte {
+        0x0 => '⁰',
+        0x1 => '¹',
+        0x2 => '²',
+        0x3 => '³',
+        0x4 => '⁴',
+        0x5 => '⁵',
+        0x6 => '⁶',
+        0x7 => '⁷',
+        0x8 => '⁸',
+        0x9 => '⁹',
+        0xa => 'ᵃ',
+        0xb => 'ᵇ',
+        0xc => 'ᶜ',
+        0xd => 'ᵈ',
+        0xe => 'ᵉ',
+        0xf => 'ᶠ',
+        _ => {
+            panic!("value passed in is too large");
+        }
+    }
+}
+
+fn render_unicode_byte(byte: u8) -> String {
+    let high = byte / 16;
+    let low = byte % 16;
+
+    format!(
+        "{}{}",
+        unicode_superscript_hex(high),
+        unicode_superscript_hex(low)
+    )
+}
+
 fn render_unicode(bytes: &mut [u8]) -> String {
     let mut column = 0;
     let mut result = String::new();
@@ -129,6 +164,9 @@ fn render_unicode(bytes: &mut [u8]) -> String {
             0x1d => "d̚ ".to_string(),
             0x1e => "e̚ ".to_string(),
             0x1f => "f̚ ".to_string(),
+            0x7f => "← ".to_string(),
+            0xfa => "ᶠᵃ".to_string(),
+            0x80..=0xff => render_unicode_byte(c).to_string(),
             _ => format!("{} ", c as char),
         })
         .for_each(|s| {
@@ -185,6 +223,8 @@ impl<B: Backend> App<B> {
             let buffer = b"\x09\x00\x06\x00hello\
                            \x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
                            \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\
+                           \x7f\x80\x90\xa0\xb0\xc0\xd0\xe0\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\
+                           \xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff\
                            world01234567890";
             let get_data = |_offset, _size| buffer.to_vec();
 
