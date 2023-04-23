@@ -6,6 +6,7 @@ use crossterm::{
 use futures::{stream::FuturesUnordered, StreamExt};
 use std::{
     cell::RefCell,
+    cmp::min,
     io,
     rc::Rc,
     sync::{atomic::AtomicBool, Arc},
@@ -42,10 +43,13 @@ impl DebugSource {
 }
 
 impl DataSource for DebugSource {
-    fn fetch<'a>(&mut self, _offset: u64, _size: u32) -> &'a [u8] {
-        // TODO: apply offset, size
-        // &self.buffer[offset as usize..(offset + size as u64) as usize]
-        &self.buffer[..]
+    fn fetch<'a>(&mut self, offset: u64, size: u32) -> &'a [u8] {
+        let begin: usize = min(offset as usize, self.buffer.len());
+        let end: usize = min(offset as usize + size as usize, self.buffer.len());
+        if begin >= end {
+            return &[];
+        }
+        &self.buffer[begin..end]
     }
 }
 
