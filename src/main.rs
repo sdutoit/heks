@@ -5,7 +5,9 @@ use crossterm::{
 };
 use futures::{stream::FuturesUnordered, StreamExt};
 use std::{
+    cell::RefCell,
     io,
+    rc::Rc,
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
@@ -15,26 +17,50 @@ use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout},
     widgets::{Block, Paragraph, Widget},
-    Terminal,
+    Frame, Terminal,
 };
 
-// TODO would be nice to return a slice, but lifetime issues make that more
-// difficult.
-trait GetData: Fn(u32, u32) -> Vec<u8> {}
-
-impl<F> GetData for F where F: Fn(u32, u32) -> Vec<u8> {}
-
-struct HexDisplay<G: GetData> {
-    get_data: Option<G>,
+trait DataSource {
+    fn fetch<'a>(&mut self, offset: u64, size: u32) -> &'a [u8];
 }
 
-impl<G: GetData> HexDisplay<G> {
+struct DebugSource {
+    buffer: &'static [u8],
+}
+
+impl DebugSource {
+    fn new() -> Self {
+        DebugSource {
+            buffer: b"\x09\x00\x06\x00hello\
+                      \x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
+                      \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\
+                      \x7f\x80\x90\xa0\xb0\xc0\xd0\xe0\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\
+                      \xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff\
+                      world01234567890",
+        }
+    }
+}
+
+impl DataSource for DebugSource {
+    fn fetch<'a>(&mut self, _offset: u64, _size: u32) -> &'a [u8] {
+        // TODO: apply offset, size
+        // &self.buffer[offset as usize..(offset + size as u64) as usize]
+        &self.buffer[..]
+    }
+}
+
+#[derive(Clone)]
+struct HexDisplay {
+    source: Option<Rc<RefCell<Box<dyn DataSource>>>>,
+}
+
+impl HexDisplay {
     fn default() -> Self {
-        HexDisplay { get_data: None }
+        HexDisplay { source: None }
     }
 
-    fn get_data(mut self, get_data: G) -> Self {
-        self.get_data = Some(get_data);
+    fn source(mut self, source: Rc<RefCell<Box<dyn DataSource>>>) -> Self {
+        self.source = Some(source);
         self
     }
 }
@@ -69,24 +95,25 @@ fn render_hex(bytes: &[u8]) -> String {
     result
 }
 
-impl<G: GetData> Widget for HexDisplay<G> {
+impl Widget for HexDisplay {
     fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
-        let data = (self.get_data.unwrap())(0, 1024);
+        let data = self.source.unwrap().borrow_mut().fetch(0, 1024);
         Paragraph::new(render_hex(data.as_ref())).render(area, buf);
     }
 }
 
-struct UnicodeDisplay<G: GetData> {
-    get_data: Option<G>,
+#[derive(Clone)]
+struct UnicodeDisplay {
+    source: Option<Rc<RefCell<Box<dyn DataSource>>>>,
 }
 
-impl<G: GetData> UnicodeDisplay<G> {
+impl UnicodeDisplay {
     fn default() -> Self {
-        UnicodeDisplay { get_data: None }
+        UnicodeDisplay { source: None }
     }
 
-    fn get_data(mut self, get_data: G) -> Self {
-        self.get_data = Some(get_data);
+    fn source(mut self, source: Rc<RefCell<Box<dyn DataSource>>>) -> Self {
+        self.source = Some(source);
         self
     }
 }
@@ -126,7 +153,7 @@ fn render_unicode_byte(byte: u8) -> String {
     )
 }
 
-fn render_unicode(bytes: &mut [u8]) -> String {
+fn render_unicode(bytes: &[u8]) -> String {
     let mut column = 0;
     let mut result = String::new();
     bytes
@@ -178,73 +205,76 @@ fn render_unicode(bytes: &mut [u8]) -> String {
     result
 }
 
-impl<G: GetData> Widget for UnicodeDisplay<G> {
+impl Widget for UnicodeDisplay {
     fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
-        let mut data = (self.get_data.unwrap())(0, 1024);
-        let text = render_unicode(&mut data[..]);
+        let data = self.source.unwrap().borrow_mut().fetch(0, 1024);
+        let text = render_unicode(data);
 
         Paragraph::new(text).render(area, buf);
     }
 }
 
-struct App<B: Backend> {
-    terminal: Terminal<B>,
+struct App {
+    hex_display: HexDisplay,
+    unicode_display: UnicodeDisplay,
 }
 
-impl<B: Backend> App<B> {
-    fn new(mut terminal: Terminal<B>) -> Result<Self, io::Error> {
+impl App {
+    fn new<B: Backend>(
+        terminal: &mut Terminal<B>,
+        source: Box<dyn DataSource>,
+    ) -> Result<Self, io::Error> {
         terminal.hide_cursor()?;
-        Ok(App { terminal })
+        let source = Rc::new(RefCell::new(source));
+        let hex_display = HexDisplay::default().source(source.clone());
+        let unicode_display = UnicodeDisplay::default().source(source.clone());
+        Ok(App {
+            hex_display,
+            unicode_display,
+        })
     }
 
-    fn draw(&mut self) -> Result<(), io::Error> {
-        self.terminal.draw(|f| {
-            let stack = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(1), Constraint::Min(0)].as_ref())
-                .split(f.size());
-
-            // TODO: Set this to something like " - filename.bin"
-            let title_info = "";
-            let title = Block::default()
-                .title(format!("Heks{}", title_info))
-                .title_alignment(Alignment::Center);
-
-            f.render_widget(title, stack[0]);
-
-            let file_display = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(stack[1]);
-
-            // TODO use _offset and _size
-            let buffer = b"\x09\x00\x06\x00hello\
-                           \x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\
-                           \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\
-                           \x7f\x80\x90\xa0\xb0\xc0\xd0\xe0\xf0\xf1\xf2\xf3\xf4\xf5\xf6\xf7\
-                           \xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff\
-                           world01234567890";
-            let get_data = |_offset, _size| buffer.to_vec();
-
-            let hex_display = HexDisplay::default().get_data(get_data);
-            f.render_widget(hex_display, file_display[0]);
-
-            let unicode_display = UnicodeDisplay::default().get_data(get_data);
-            f.render_widget(unicode_display, file_display[1]);
-        })?;
+    fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), io::Error> {
+        terminal.draw(|f| self.paint(f))?;
 
         Ok(())
+    }
+
+    fn paint<B: Backend>(&self, f: &mut Frame<B>) -> () {
+        let stack = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Min(0)].as_ref())
+            .split(f.size());
+
+        // TODO: Set this to something like " - filename.bin"
+        let title_info = "";
+        let title = Block::default()
+            .title(format!("Heks{}", title_info))
+            .title_alignment(Alignment::Center);
+
+        f.render_widget(title, stack[0]);
+
+        let file_display = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(stack[1]);
+
+        f.render_widget(self.hex_display.clone(), file_display[0]);
+
+        f.render_widget(self.unicode_display.clone(), file_display[1]);
     }
 }
 
 struct EventLoop<B: Backend> {
-    pub app: App<B>,
+    pub terminal: Terminal<B>,
+    pub app: App,
     pub done: Arc<AtomicBool>,
 }
 
 impl<B: Backend> EventLoop<B> {
-    pub fn new(app: App<B>) -> Self {
+    pub fn new(terminal: Terminal<B>, app: App) -> Self {
         EventLoop::<B> {
+            terminal,
             app,
             done: Arc::new(AtomicBool::new(false)),
         }
@@ -289,7 +319,7 @@ impl<B: Backend> EventLoop<B> {
             }
         }
 
-        self.app.draw()?;
+        self.app.draw(&mut self.terminal)?;
 
         Ok(())
     }
@@ -341,9 +371,10 @@ impl Drop for TerminalSetup {
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
     let backend = CrosstermBackend::new(io::stdout());
-    let terminal = Terminal::new(backend)?;
-    let app = App::new(terminal)?;
-    let mut event_loop = EventLoop::new(app);
+    let mut terminal = Terminal::new(backend)?;
+    let source = Box::new(DebugSource::new());
+    let app = App::new(&mut terminal, source)?;
+    let mut event_loop = EventLoop::new(terminal, app);
 
     let _terminal_setup = TerminalSetup::new()?;
 
