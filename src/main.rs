@@ -47,7 +47,7 @@ async fn main() -> io::Result<()> {
     // let source = Box::new(DebugSource::new());
     let source = Box::new(
         FileSource::new(&args.filename)
-            .expect(format!("Unable to open '{}'", args.filename.to_str().unwrap()).as_str()),
+            .unwrap_or_else(|_| panic!("Unable to open '{}'", args.filename.to_str().unwrap())),
     );
     let app = App::new(&mut terminal, source)?;
     let mut event_loop = EventLoop::new(terminal, app);

@@ -23,7 +23,7 @@ use tui::{
 
 pub trait DataSource {
     fn name(&self) -> &str;
-    fn fetch<'a>(&'a mut self, offset: u64, size: u32) -> &'a [u8];
+    fn fetch(&mut self, offset: u64, size: u32) -> &[u8];
 }
 
 struct DebugSource {
@@ -48,7 +48,7 @@ impl DataSource for DebugSource {
     fn name(&self) -> &str {
         "debug"
     }
-    fn fetch<'a>(&'a mut self, offset: u64, size: u32) -> &'a [u8] {
+    fn fetch(&mut self, offset: u64, size: u32) -> &[u8] {
         &self.buffer[clamp(offset, size, self.buffer.len())]
     }
 }
@@ -86,7 +86,7 @@ impl DataSource for FileSource {
         self.name.as_str()
     }
 
-    fn fetch<'a>(&'a mut self, offset: u64, size: u32) -> &'a [u8] {
+    fn fetch(&mut self, offset: u64, size: u32) -> &[u8] {
         let range = clamp(offset, size, self.mmap.len());
 
         if !range.is_empty() {
@@ -148,7 +148,7 @@ impl Widget for HexDisplay {
         let data = self.source.unwrap();
         let mut data = data.borrow_mut();
         let data = data.fetch(0, 1024);
-        Paragraph::new(render_hex(data.as_ref())).render(area, buf);
+        Paragraph::new(render_hex(data)).render(area, buf);
     }
 }
 
@@ -241,7 +241,7 @@ fn render_unicode(bytes: &[u8]) -> String {
             0x1d => "d̚ ".to_string(),
             0x1e => "e̚ ".to_string(),
             0x1f => "f̚ ".to_string(),
-            0x7f..=0xff => render_unicode_byte(c).to_string(),
+            0x7f..=0xff => render_unicode_byte(c),
             _ => format!("{} ", c as char),
         })
         .for_each(|s| {
@@ -295,7 +295,7 @@ impl App {
         Ok(())
     }
 
-    fn paint<B: Backend>(&self, f: &mut Frame<B>) -> () {
+    fn paint<B: Backend>(&self, f: &mut Frame<B>) {
         let stack = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(1), Constraint::Min(0)].as_ref())
