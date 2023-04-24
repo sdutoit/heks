@@ -1,10 +1,10 @@
 use clap::Parser;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use heks::terminal::TerminalSetup;
 use heks::App;
 use heks::EventLoop;
 use heks::FileSource;
-use heks::TerminalSetup;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;

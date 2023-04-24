@@ -1,8 +1,6 @@
-use crossterm::{
-    event::{poll, read, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
+pub mod terminal;
+
+use crossterm::event::{poll, read, KeyCode, KeyModifiers};
 use memmap2::{Mmap, MmapOptions};
 use std::{
     cell::RefCell,
@@ -377,28 +375,5 @@ impl<B: Backend> EventLoop<B> {
         self.app.draw(&mut self.terminal)?;
 
         Ok(())
-    }
-}
-
-pub struct TerminalSetup {}
-
-impl TerminalSetup {
-    pub fn new() -> Result<TerminalSetup, io::Error> {
-        execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-        enable_raw_mode()?;
-
-        Ok(TerminalSetup {})
-    }
-
-    fn cleanup(&mut self) {
-        disable_raw_mode().unwrap_or(());
-        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)
-            .expect("unable to leave alternate screen/disable mouse capture");
-    }
-}
-
-impl Drop for TerminalSetup {
-    fn drop(&mut self) {
-        self.cleanup();
     }
 }
