@@ -17,6 +17,7 @@ use tokio::time::{sleep_until, Instant};
 use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Style},
     widgets::{Block, Paragraph, Widget},
     Frame, Terminal,
 };
@@ -296,16 +297,30 @@ impl App {
     }
 
     fn paint<B: Backend>(&self, f: &mut Frame<B>) {
+        const COLOR_FRAME_BACKGROUND: Color = Color::Rgb(0, 0, 64);
+        const COLOR_FRAME_FOREGROUND: Color = Color::Rgb(128, 128, 192);
+
+        let style_frame = Style::default()
+            .bg(COLOR_FRAME_BACKGROUND)
+            .fg(COLOR_FRAME_FOREGROUND);
+
         let stack = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Percentage(100)].as_ref())
+            .constraints(
+                [
+                    Constraint::Length(1),
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                ]
+                .as_ref(),
+            )
             .split(f.size());
 
-        let title = Block::default()
-            .title(format!("{} - heks", self.source_name))
+        let header = Block::default()
+            .style(style_frame)
+            .title(self.source_name.clone())
             .title_alignment(Alignment::Center);
-
-        f.render_widget(title, stack[0]);
+        f.render_widget(header, stack[0]);
 
         let file_display = Layout::default()
             .direction(Direction::Horizontal)
@@ -314,6 +329,12 @@ impl App {
 
         f.render_widget(self.hex_display.clone(), file_display[0]);
         f.render_widget(self.unicode_display.clone(), file_display[1]);
+
+        let footer = Block::default()
+            .style(style_frame)
+            .title("[heks]")
+            .title_alignment(Alignment::Center);
+        f.render_widget(footer, stack[2]);
     }
 }
 
