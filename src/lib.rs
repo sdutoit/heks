@@ -100,16 +100,25 @@ impl DataSource for FileSource {
 
 #[derive(Clone)]
 struct HexDisplay {
+    style: Style,
     source: Option<Rc<RefCell<Box<dyn DataSource>>>>,
 }
 
 impl HexDisplay {
     fn default() -> Self {
-        HexDisplay { source: None }
+        HexDisplay {
+            style: Style::default(),
+            source: None,
+        }
     }
 
     fn source(mut self, source: Rc<RefCell<Box<dyn DataSource>>>) -> Self {
         self.source = Some(source);
+        self
+    }
+
+    fn style(mut self, style: Style) -> Self {
+        self.style = style;
         self
     }
 }
@@ -149,22 +158,33 @@ impl Widget for HexDisplay {
         let data = self.source.unwrap();
         let mut data = data.borrow_mut();
         let data = data.fetch(0, 1024);
-        Paragraph::new(render_hex(data)).render(area, buf);
+        Paragraph::new(render_hex(data))
+            .style(self.style)
+            .render(area, buf);
     }
 }
 
 #[derive(Clone)]
 struct UnicodeDisplay {
+    style: Style,
     source: Option<Rc<RefCell<Box<dyn DataSource>>>>,
 }
 
 impl UnicodeDisplay {
     fn default() -> Self {
-        UnicodeDisplay { source: None }
+        UnicodeDisplay {
+            style: Style::default(),
+            source: None,
+        }
     }
 
     fn source(mut self, source: Rc<RefCell<Box<dyn DataSource>>>) -> Self {
         self.source = Some(source);
+        self
+    }
+
+    fn style(mut self, style: Style) -> Self {
+        self.style = style;
         self
     }
 }
@@ -263,7 +283,7 @@ impl Widget for UnicodeDisplay {
         let data = data.fetch(0, 1024);
         let text = render_unicode(data);
 
-        Paragraph::new(text).render(area, buf);
+        Paragraph::new(text).style(self.style).render(area, buf);
     }
 }
 
@@ -281,8 +301,27 @@ impl App {
         terminal.hide_cursor()?;
         let source = Rc::new(RefCell::new(source));
         let source_name = source.borrow().name().to_string();
-        let hex_display = HexDisplay::default().source(source.clone());
-        let unicode_display = UnicodeDisplay::default().source(source.clone());
+
+        const COLOR_HEX_BACKGROUND: Color = Color::Rgb(32, 32, 32);
+        const COLOR_HEX_FOREGROUND: Color = Color::Rgb(192, 192, 192);
+        let style_hex = Style::default()
+            .bg(COLOR_HEX_BACKGROUND)
+            .fg(COLOR_HEX_FOREGROUND);
+
+        let hex_display = HexDisplay::default()
+            .source(source.clone())
+            .style(style_hex);
+
+        const COLOR_UNICODE_BACKGROUND: Color = Color::Rgb(64, 64, 64);
+        const COLOR_UNICODE_FOREGROUND: Color = Color::Rgb(192, 192, 192);
+        let style_unicode = Style::default()
+            .bg(COLOR_UNICODE_BACKGROUND)
+            .fg(COLOR_UNICODE_FOREGROUND);
+
+        let unicode_display = UnicodeDisplay::default()
+            .source(source.clone())
+            .style(style_unicode);
+
         Ok(App {
             source_name,
             hex_display,
@@ -299,7 +338,6 @@ impl App {
     fn paint<B: Backend>(&self, f: &mut Frame<B>) {
         const COLOR_FRAME_BACKGROUND: Color = Color::Rgb(0, 0, 64);
         const COLOR_FRAME_FOREGROUND: Color = Color::Rgb(128, 128, 192);
-
         let style_frame = Style::default()
             .bg(COLOR_FRAME_BACKGROUND)
             .fg(COLOR_FRAME_FOREGROUND);
@@ -332,7 +370,7 @@ impl App {
 
         let footer = Block::default()
             .style(style_frame)
-            .title("[heks]")
+            .title("heks 🧹")
             .title_alignment(Alignment::Center);
         f.render_widget(footer, stack[2]);
     }
