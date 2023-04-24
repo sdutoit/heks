@@ -6,13 +6,13 @@ use heks::App;
 use heks::EventLoop;
 use heks::FileSource;
 use home::home_dir;
+use log::error;
 use log::info;
-use log::trace;
 use std::env;
-use std::fs::File;
 use std::fs::OpenOptions;
 use std::io;
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::sync::Arc;
 use tokio::signal::unix::signal;
 use tokio::signal::unix::SignalKind;
@@ -44,24 +44,31 @@ fn install_exit_handler<F: Fn() + Send + 'static>(handler: F) {
     });
 }
 
+fn init_log_file(logger: &mut env_logger::Builder, path: PathBuf) {
+    let log_file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+    let target = Box::new(log_file);
+    logger.target(env_logger::Target::Pipe(target));
+}
+
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> io::Result<()> {
+async fn main() -> ExitCode {
     let mut logger = env_logger::builder();
     logger.filter_level(log::LevelFilter::Info);
     logger.parse_default_env();
     logger.parse_env("HEKS_LOG");
 
-    match home_dir() {
-        Some(path) => {
-            let log_path = path.join(".heks.log");
-            let target = Box::new(OpenOptions::new().write(true).append(true).open(log_path)?);
-            logger.target(env_logger::Target::Pipe(target));
-        }
-        None => {}
-    };
+    // Create a log file at ~/.heks.log (as long as we can figure out the user's
+    // home directory).
+    home_dir().map(|path| init_log_file(&mut logger, path.join(".heks.log")));
 
+    // After these calls, logs go to the log file, and panics go to the log.
     logger.init();
     log_panics::init();
+
     info!("========");
     info!("STARTUP: {}", shell_words::join(env::args()));
     info!("========");
@@ -69,14 +76,18 @@ async fn main() -> io::Result<()> {
     let args = Args::parse();
 
     let backend = CrosstermBackend::new(io::stdout());
-    let mut terminal = Terminal::new(backend)?;
-    let _terminal_setup = TerminalSetup::new()?;
+    let mut terminal = Terminal::new(backend).unwrap();
 
-    let source = Box::new(
-        FileSource::new(&args.filename)
-            .unwrap_or_else(|_| panic!("Unable to open '{}'", args.filename.to_str().unwrap())),
-    );
-    let app = App::new(&mut terminal, source)?;
+    let source = FileSource::new(&args.filename)
+        .map(|src| Box::new(src))
+        .unwrap_or_else(|error| {
+            eprintln!("Unable to open {:?}: {}", &args.filename, error);
+            error!("Unable to open {:?}", &args.filename);
+            panic!("{:?}", error);
+        });
+
+    let _terminal_setup = TerminalSetup::new().unwrap();
+    let app = App::new(&mut terminal, source).unwrap();
     let mut event_loop = EventLoop::new(terminal, app);
 
     let done_clone = Arc::clone(&event_loop.done);
@@ -86,7 +97,7 @@ async fn main() -> io::Result<()> {
         done_clone.store(true, std::sync::atomic::Ordering::Release);
     });
 
-    event_loop.run().await?;
+    event_loop.run().await.unwrap();
 
-    Ok(())
+    ExitCode::SUCCESS
 }
