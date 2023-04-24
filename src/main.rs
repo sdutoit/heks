@@ -63,7 +63,7 @@ async fn main() -> ExitCode {
 
     // Create a log file at ~/.heks.log (as long as we can figure out the user's
     // home directory).
-    home_dir().map(|path| init_log_file(&mut logger, path.join(".heks.log")));
+    if let Some(path) = home_dir() { init_log_file(&mut logger, path.join(".heks.log")) }
 
     // After these calls, logs go to the log file, and panics go to the log.
     logger.init();
@@ -79,7 +79,7 @@ async fn main() -> ExitCode {
     let mut terminal = Terminal::new(backend).unwrap();
 
     let source = FileSource::new(&args.filename)
-        .map(|src| Box::new(src))
+        .map(Box::new)
         .unwrap_or_else(|error| {
             eprintln!("Unable to open {:?}: {}", &args.filename, error);
             error!("Unable to open {:?}", &args.filename);
