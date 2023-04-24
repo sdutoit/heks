@@ -5,7 +5,12 @@ use heks::terminal::TerminalSetup;
 use heks::App;
 use heks::EventLoop;
 use heks::FileSource;
+use home::home_dir;
+use log::info;
 use log::trace;
+use std::env;
+use std::fs::File;
+use std::fs::OpenOptions;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -41,22 +46,38 @@ fn install_exit_handler<F: Fn() + Send + 'static>(handler: F) {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
-    env_logger::init();
-    trace!("heks starting up");
+    let mut logger = env_logger::builder();
+    logger.filter_level(log::LevelFilter::Info);
+    logger.parse_default_env();
+    logger.parse_env("HEKS_LOG");
+
+    match home_dir() {
+        Some(path) => {
+            let log_path = path.join(".heks.log");
+            let target = Box::new(OpenOptions::new().write(true).append(true).open(log_path)?);
+            logger.target(env_logger::Target::Pipe(target));
+        }
+        None => {}
+    };
+
+    logger.init();
+    log_panics::init();
+    info!("========");
+    info!("STARTUP: {}", shell_words::join(env::args()));
+    info!("========");
 
     let args = Args::parse();
 
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
-    // let source = Box::new(DebugSource::new());
+    let _terminal_setup = TerminalSetup::new()?;
+
     let source = Box::new(
         FileSource::new(&args.filename)
             .unwrap_or_else(|_| panic!("Unable to open '{}'", args.filename.to_str().unwrap())),
     );
     let app = App::new(&mut terminal, source)?;
     let mut event_loop = EventLoop::new(terminal, app);
-
-    let _terminal_setup = TerminalSetup::new()?;
 
     let done_clone = Arc::clone(&event_loop.done);
     install_exit_handler(move || {
