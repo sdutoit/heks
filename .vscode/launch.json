@@ -1,0 +1,84 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'heks'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=heks"
+                ],
+                "filter": {
+                    "name": "heks",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'heks'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=heks",
+                    "--package=heks"
+                ],
+                "filter": {
+                    "name": "heks",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'heks nosuchfile'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=heks",
+                    "--package=heks"
+                ],
+                "filter": {
+                    "name": "heks",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "nosuchfile"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'heks'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=heks",
+                    "--package=heks"
+                ],
+                "filter": {
+                    "name": "heks",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
