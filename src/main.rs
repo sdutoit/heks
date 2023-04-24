@@ -24,7 +24,7 @@ struct Args {
     filename: PathBuf,
 }
 
-fn install_exit_handler<F: Fn() + Send + 'static>(handler: F) {
+fn install_exit_handler<F: FnMut() + Send + 'static>(mut handler: F) {
     tokio::spawn(async move {
         let mut handlers: Vec<_> = [
             SignalKind::hangup(),
@@ -44,6 +44,17 @@ fn install_exit_handler<F: Fn() + Send + 'static>(handler: F) {
     });
 }
 
+fn install_suspend_handler<F: FnMut() + Send + 'static>(mut handler: F) {
+    tokio::spawn(async move {
+        loop {
+            signal(SignalKind::from_raw(nix::sys::signal::SIGTSTP as i32))
+                .unwrap()
+                .recv()
+                .await;
+            handler();
+        }
+    });
+}
 fn init_log_file(logger: &mut env_logger::Builder, path: PathBuf) {
     let log_file = OpenOptions::new()
         .write(true)
@@ -63,7 +74,9 @@ async fn main() -> ExitCode {
 
     // Create a log file at ~/.heks.log (as long as we can figure out the user's
     // home directory).
-    if let Some(path) = home_dir() { init_log_file(&mut logger, path.join(".heks.log")) }
+    if let Some(path) = home_dir() {
+        init_log_file(&mut logger, path.join(".heks.log"))
+    }
 
     // After these calls, logs go to the log file, and panics go to the log.
     logger.init();
@@ -95,6 +108,17 @@ async fn main() -> ExitCode {
         // We might want to hold onto the signal so we can reflect that in our
         // exit code, but this is fine for now.
         done_clone.store(true, std::sync::atomic::Ordering::Release);
+    });
+
+    let terminal_clone = Arc::clone(&event_loop.terminal);
+    install_suspend_handler(move || {
+        TerminalSetup::hide().ok();
+        nix::sys::signal::kill(nix::unistd::getpid(), nix::sys::signal::SIGSTOP).ok();
+        TerminalSetup::show().ok();
+
+        // Ensure that the terminal gets redrawn next frame.
+        let mut terminal = terminal_clone.lock().unwrap();
+        terminal.clear().ok();
     });
 
     event_loop.run().await.unwrap();

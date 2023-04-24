@@ -10,21 +10,26 @@ pub struct TerminalSetup {}
 
 impl TerminalSetup {
     pub fn new() -> Result<TerminalSetup, io::Error> {
-        execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-        enable_raw_mode()?;
+        TerminalSetup::show().expect("unable to enter alternate screen/enable mouse capture");
 
         Ok(TerminalSetup {})
     }
 
-    fn cleanup(&mut self) {
-        disable_raw_mode().unwrap_or(());
-        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)
-            .expect("unable to leave alternate screen/disable mouse capture");
+    pub fn show() -> Result<(), io::Error> {
+        execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+        enable_raw_mode()?;
+        Ok(())
+    }
+
+    pub fn hide() -> Result<(), io::Error> {
+        disable_raw_mode().ok();
+        execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
+        Ok(())
     }
 }
 
 impl Drop for TerminalSetup {
     fn drop(&mut self) {
-        self.cleanup();
+        TerminalSetup::hide().expect("unable to leave alternate screen/disable mouse capture");
     }
 }

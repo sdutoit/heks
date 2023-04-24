@@ -10,7 +10,7 @@ use std::{
     ops::Range,
     path::PathBuf,
     rc::Rc,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
 use tokio::time::{sleep_until, Instant};
@@ -377,7 +377,7 @@ impl App {
 }
 
 pub struct EventLoop<B: Backend> {
-    pub terminal: Terminal<B>,
+    pub terminal: Arc<Mutex<Terminal<B>>>,
     pub app: App,
     pub done: Arc<AtomicBool>,
 }
@@ -385,7 +385,7 @@ pub struct EventLoop<B: Backend> {
 impl<B: Backend> EventLoop<B> {
     pub fn new(terminal: Terminal<B>, app: App) -> Self {
         EventLoop::<B> {
-            terminal,
+            terminal: Arc::new(Mutex::new(terminal)),
             app,
             done: Arc::new(AtomicBool::new(false)),
         }
@@ -416,6 +416,28 @@ impl<B: Backend> EventLoop<B> {
                 crossterm::event::Event::FocusGained => {}
                 crossterm::event::Event::FocusLost => {}
                 crossterm::event::Event::Key(key) => {
+                    match (key.modifiers, key.code) {
+                        (KeyModifiers::NONE, KeyCode::Esc)
+                        | (KeyModifiers::NONE, KeyCode::Char('q')) => {
+                            self.done.store(true, std::sync::atomic::Ordering::Release);
+                        }
+
+                        (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+                            nix::sys::signal::kill(nix::unistd::getpid(), nix::sys::signal::SIGINT)
+                                .ok();
+                        }
+
+                        (KeyModifiers::CONTROL, KeyCode::Char('z')) => {
+                            nix::sys::signal::kill(
+                                nix::unistd::getpid(),
+                                nix::sys::signal::SIGTSTP,
+                            )
+                            .ok();
+                        }
+
+                        (_, _) => {}
+                    };
+
                     if (key.modifiers.is_empty()
                         && (key.code == KeyCode::Esc || key.code == KeyCode::Char('q')))
                         || (key.modifiers == KeyModifiers::CONTROL
@@ -430,7 +452,8 @@ impl<B: Backend> EventLoop<B> {
             }
         }
 
-        self.app.draw(&mut self.terminal)?;
+        let mut terminal = self.terminal.lock().unwrap();
+        self.app.draw(&mut terminal)?;
 
         Ok(())
     }
