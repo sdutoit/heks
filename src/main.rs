@@ -5,6 +5,7 @@ use heks::terminal::TerminalSetup;
 use heks::App;
 use heks::EventLoop;
 use heks::FileSource;
+use log::trace;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -40,6 +41,9 @@ fn install_exit_handler<F: Fn() + Send + 'static>(handler: F) {
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
+    env_logger::init();
+    trace!("heks starting up");
+
     let args = Args::parse();
 
     let backend = CrosstermBackend::new(io::stdout());
