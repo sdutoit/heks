@@ -298,7 +298,7 @@ impl App {
     fn paint<B: Backend>(&self, f: &mut Frame<B>) {
         let stack = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Min(0)].as_ref())
+            .constraints([Constraint::Min(1), Constraint::Percentage(100)].as_ref())
             .split(f.size());
 
         let title = Block::default()
@@ -313,7 +313,6 @@ impl App {
             .split(stack[1]);
 
         f.render_widget(self.hex_display.clone(), file_display[0]);
-
         f.render_widget(self.unicode_display.clone(), file_display[1]);
     }
 }
