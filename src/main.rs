@@ -1,13 +1,18 @@
+use clap::Parser;
 use crossterm::{
     event::{poll, read, DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use futures::{stream::FuturesUnordered, StreamExt};
+use memmap2::{Mmap, MmapOptions};
 use std::{
     cell::RefCell,
     cmp::min,
-    io,
+    fs::File,
+    io::{self, ErrorKind},
+    ops::Range,
+    path::PathBuf,
     rc::Rc,
     sync::{atomic::AtomicBool, Arc},
     time::Duration,
@@ -22,13 +27,15 @@ use tui::{
 };
 
 trait DataSource {
-    fn fetch<'a>(&mut self, offset: u64, size: u32) -> &'a [u8];
+    fn name(&self) -> &str;
+    fn fetch<'a>(&'a mut self, offset: u64, size: u32) -> &'a [u8];
 }
 
 struct DebugSource {
     buffer: &'static [u8],
 }
 
+#[allow(dead_code)]
 impl DebugSource {
     fn new() -> Self {
         DebugSource {
@@ -43,13 +50,55 @@ impl DebugSource {
 }
 
 impl DataSource for DebugSource {
-    fn fetch<'a>(&mut self, offset: u64, size: u32) -> &'a [u8] {
-        let begin: usize = min(offset as usize, self.buffer.len());
-        let end: usize = min(offset as usize + size as usize, self.buffer.len());
-        if begin >= end {
-            return &[];
+    fn name(&self) -> &str {
+        "debug"
+    }
+    fn fetch<'a>(&'a mut self, offset: u64, size: u32) -> &'a [u8] {
+        &self.buffer[clamp(offset, size, self.buffer.len())]
+    }
+}
+
+struct FileSource {
+    name: String,
+    mmap: Mmap,
+}
+
+impl FileSource {
+    fn new(filename: &PathBuf) -> Result<Self, io::Error> {
+        let name = filename
+            .to_str()
+            .ok_or(io::Error::new(
+                ErrorKind::Other,
+                format!("Unable to parse filename {:?}", filename),
+            ))?
+            .to_string();
+        let file = File::open(filename)?;
+        let mmap = unsafe { MmapOptions::new().map(&file)? };
+
+        Ok(FileSource { name, mmap })
+    }
+}
+
+fn clamp(offset: u64, size: u32, len: usize) -> Range<usize> {
+    let begin: usize = min(offset as usize, len);
+    let end: usize = min(offset as usize + size as usize, len);
+
+    begin..end
+}
+
+impl DataSource for FileSource {
+    fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    fn fetch<'a>(&'a mut self, offset: u64, size: u32) -> &'a [u8] {
+        let range = clamp(offset, size, self.mmap.len());
+
+        if !range.is_empty() {
+            self.mmap.get(range).unwrap()
+        } else {
+            &[]
         }
-        &self.buffer[begin..end]
     }
 }
 
@@ -101,7 +150,9 @@ fn render_hex(bytes: &[u8]) -> String {
 
 impl Widget for HexDisplay {
     fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
-        let data = self.source.unwrap().borrow_mut().fetch(0, 1024);
+        let data = self.source.unwrap();
+        let mut data = data.borrow_mut();
+        let data = data.fetch(0, 1024);
         Paragraph::new(render_hex(data.as_ref())).render(area, buf);
     }
 }
@@ -211,7 +262,9 @@ fn render_unicode(bytes: &[u8]) -> String {
 
 impl Widget for UnicodeDisplay {
     fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
-        let data = self.source.unwrap().borrow_mut().fetch(0, 1024);
+        let data = self.source.unwrap();
+        let mut data = data.borrow_mut();
+        let data = data.fetch(0, 1024);
         let text = render_unicode(data);
 
         Paragraph::new(text).render(area, buf);
@@ -219,6 +272,7 @@ impl Widget for UnicodeDisplay {
 }
 
 struct App {
+    source_name: String,
     hex_display: HexDisplay,
     unicode_display: UnicodeDisplay,
 }
@@ -230,9 +284,11 @@ impl App {
     ) -> Result<Self, io::Error> {
         terminal.hide_cursor()?;
         let source = Rc::new(RefCell::new(source));
+        let source_name = source.borrow().name().to_string();
         let hex_display = HexDisplay::default().source(source.clone());
         let unicode_display = UnicodeDisplay::default().source(source.clone());
         Ok(App {
+            source_name,
             hex_display,
             unicode_display,
         })
@@ -250,10 +306,8 @@ impl App {
             .constraints([Constraint::Min(1), Constraint::Min(0)].as_ref())
             .split(f.size());
 
-        // TODO: Set this to something like " - filename.bin"
-        let title_info = "";
         let title = Block::default()
-            .title(format!("Heks{}", title_info))
+            .title(format!("{} - heks", self.source_name))
             .title_alignment(Alignment::Center);
 
         f.render_widget(title, stack[0]);
@@ -372,11 +426,22 @@ impl Drop for TerminalSetup {
     }
 }
 
+#[derive(Parser, Debug)]
+struct Args {
+    filename: PathBuf,
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> io::Result<()> {
+    let args = Args::parse();
+
     let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
-    let source = Box::new(DebugSource::new());
+    // let source = Box::new(DebugSource::new());
+    let source = Box::new(
+        FileSource::new(&args.filename)
+            .expect(format!("Unable to open '{}'", args.filename.to_str().unwrap()).as_str()),
+    );
     let app = App::new(&mut terminal, source)?;
     let mut event_loop = EventLoop::new(terminal, app);
 
