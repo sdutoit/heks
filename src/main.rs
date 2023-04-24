@@ -113,11 +113,16 @@ async fn main() -> ExitCode {
     let terminal_clone = Arc::clone(&event_loop.terminal);
     install_suspend_handler(move || {
         TerminalSetup::hide().ok();
+        {
+            let mut terminal = terminal_clone.lock().unwrap();
+            terminal.show_cursor().ok();
+        }
         nix::sys::signal::kill(nix::unistd::getpid(), nix::sys::signal::SIGSTOP).ok();
         TerminalSetup::show().ok();
 
         // Ensure that the terminal gets redrawn next frame.
         let mut terminal = terminal_clone.lock().unwrap();
+        terminal.hide_cursor().ok();
         terminal.clear().ok();
     });
 
