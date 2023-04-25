@@ -1,23 +1,11 @@
 use clap::Parser;
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
-use heks::source::FileSource;
-use heks::terminal::TerminalSetup;
-use heks::App;
-use heks::EventLoop;
+use futures::{stream::FuturesUnordered, StreamExt};
+use heks::{source::FileSource, terminal::TerminalSetup, App, EventLoop};
 use home::home_dir;
-use log::error;
-use log::info;
-use std::env;
-use std::fs::OpenOptions;
-use std::io;
-use std::path::PathBuf;
-use std::process::ExitCode;
-use std::sync::Arc;
-use tokio::signal::unix::signal;
-use tokio::signal::unix::SignalKind;
-use tui::backend::CrosstermBackend;
-use tui::Terminal;
+use log::{error, info};
+use std::{env, fs::OpenOptions, io, path::PathBuf, process::ExitCode, sync::Arc};
+use tokio::signal::unix::{signal, SignalKind};
+use tui::{backend::CrosstermBackend, Terminal};
 
 #[derive(Parser, Debug)]
 struct Args {
