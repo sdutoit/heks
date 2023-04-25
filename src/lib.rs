@@ -1,6 +1,6 @@
 pub mod terminal;
 
-use crossterm::event::{poll, read, KeyCode, KeyModifiers};
+use crossterm::event::{poll, read, KeyCode, KeyEvent, KeyModifiers};
 use log::debug;
 use memmap2::{Mmap, MmapOptions};
 use std::{
@@ -420,6 +420,68 @@ impl App {
             .title_alignment(Alignment::Center);
         f.render_widget(footer, stack[2]);
     }
+
+    fn on_key(&mut self, key: KeyEvent) {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::NONE, KeyCode::Char('l')) | (KeyModifiers::NONE, KeyCode::Right) => {
+                assert!(self.cursor_start <= self.cursor_end);
+
+                if self.cursor_end < u64::MAX {
+                    self.cursor_start += 1;
+                    self.cursor_end += 1;
+                }
+            }
+
+            (KeyModifiers::NONE, KeyCode::Char('h')) | (KeyModifiers::NONE, KeyCode::Left) => {
+                assert!(self.cursor_end >= self.cursor_start);
+
+                if self.cursor_start > 0 {
+                    self.cursor_start -= 1;
+                    self.cursor_end -= 1;
+                }
+            }
+
+            (KeyModifiers::SHIFT, KeyCode::Char('L')) => {
+                self.cursor_end = self.cursor_end.saturating_add(1);
+            }
+
+            (KeyModifiers::SHIFT, KeyCode::Char('H')) => {
+                if self.cursor_end > self.cursor_start + 1 {
+                    self.cursor_end -= 1;
+                }
+            }
+
+            (KeyModifiers::NONE, KeyCode::Tab)
+            | (
+                KeyModifiers::ALT,
+                KeyCode::Char('f'), // Should be KeyCode::Right, but that's what I get from crossterm..
+            ) => {
+                assert!(self.cursor_start <= self.cursor_end);
+
+                let width = self.cursor_end - self.cursor_start;
+
+                self.cursor_end = self.cursor_end.saturating_add(width);
+                self.cursor_start = self.cursor_end - width;
+            }
+
+            (KeyModifiers::SHIFT, KeyCode::BackTab)
+            | (
+                KeyModifiers::ALT,
+                KeyCode::Char('b'), // Should be KeyCode::Left, but that's what I get from crossterm..
+            ) => {
+                assert!(self.cursor_start <= self.cursor_end);
+
+                let width = self.cursor_end - self.cursor_start;
+
+                self.cursor_start = self.cursor_start.saturating_sub(width);
+                self.cursor_end = self.cursor_start + width;
+            }
+
+            (_, _) => {
+                debug!("key event: {:?}", key);
+            }
+        };
+    }
 }
 
 pub struct EventLoop<B: Backend> {
@@ -461,87 +523,23 @@ impl<B: Backend> EventLoop<B> {
             match event {
                 crossterm::event::Event::FocusGained => {}
                 crossterm::event::Event::FocusLost => {}
-                crossterm::event::Event::Key(key) => {
-                    match (key.modifiers, key.code) {
-                        (KeyModifiers::NONE, KeyCode::Esc)
-                        | (KeyModifiers::NONE, KeyCode::Char('q')) => {
-                            self.done.store(true, std::sync::atomic::Ordering::Release);
-                        }
+                crossterm::event::Event::Key(key) => match (key.modifiers, key.code) {
+                    (KeyModifiers::NONE, KeyCode::Esc)
+                    | (KeyModifiers::NONE, KeyCode::Char('q')) => {
+                        self.done.store(true, std::sync::atomic::Ordering::Release);
+                    }
 
-                        (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
-                            nix::sys::signal::kill(nix::unistd::getpid(), nix::sys::signal::SIGINT)
-                                .ok();
-                        }
-
-                        (KeyModifiers::CONTROL, KeyCode::Char('z')) => {
-                            nix::sys::signal::kill(
-                                nix::unistd::getpid(),
-                                nix::sys::signal::SIGTSTP,
-                            )
+                    (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
+                        nix::sys::signal::kill(nix::unistd::getpid(), nix::sys::signal::SIGINT)
                             .ok();
-                        }
+                    }
 
-                        (KeyModifiers::NONE, KeyCode::Char('l'))
-                        | (KeyModifiers::NONE, KeyCode::Right) => {
-                            assert!(self.app.cursor_start <= self.app.cursor_end);
-
-                            if self.app.cursor_end < u64::MAX {
-                                self.app.cursor_start += 1;
-                                self.app.cursor_end += 1;
-                            }
-                        }
-
-                        (KeyModifiers::NONE, KeyCode::Char('h'))
-                        | (KeyModifiers::NONE, KeyCode::Left) => {
-                            assert!(self.app.cursor_end >= self.app.cursor_start);
-
-                            if self.app.cursor_start > 0 {
-                                self.app.cursor_start -= 1;
-                                self.app.cursor_end -= 1;
-                            }
-                        }
-
-                        (KeyModifiers::SHIFT, KeyCode::Char('L')) => {
-                            self.app.cursor_end = self.app.cursor_end.saturating_add(1);
-                        }
-
-                        (KeyModifiers::SHIFT, KeyCode::Char('H')) => {
-                            if self.app.cursor_end > self.app.cursor_start + 1 {
-                                self.app.cursor_end -= 1;
-                            }
-                        }
-
-                        (KeyModifiers::NONE, KeyCode::Tab)
-                        | (
-                            KeyModifiers::ALT,
-                            KeyCode::Char('f'), // Should be KeyCode::Right, but that's what I get from crossterm..
-                        ) => {
-                            assert!(self.app.cursor_start <= self.app.cursor_end);
-
-                            let width = self.app.cursor_end - self.app.cursor_start;
-
-                            self.app.cursor_end = self.app.cursor_end.saturating_add(width);
-                            self.app.cursor_start = self.app.cursor_end - width;
-                        }
-
-                        (KeyModifiers::SHIFT, KeyCode::BackTab)
-                        | (
-                            KeyModifiers::ALT,
-                            KeyCode::Char('b'), // Should be KeyCode::Left, but that's what I get from crossterm..
-                        ) => {
-                            assert!(self.app.cursor_start <= self.app.cursor_end);
-
-                            let width = self.app.cursor_end - self.app.cursor_start;
-
-                            self.app.cursor_start = self.app.cursor_start.saturating_sub(width);
-                            self.app.cursor_end = self.app.cursor_start + width;
-                        }
-
-                        (_, _) => {
-                            debug!("key event: {:?}", key);
-                        }
-                    };
-                }
+                    (KeyModifiers::CONTROL, KeyCode::Char('z')) => {
+                        nix::sys::signal::kill(nix::unistd::getpid(), nix::sys::signal::SIGTSTP)
+                            .ok();
+                    }
+                    (_, _) => self.app.on_key(key),
+                },
                 crossterm::event::Event::Mouse(_) => {}
                 crossterm::event::Event::Paste(_) => {}
                 crossterm::event::Event::Resize(_, _) => {}
