@@ -18,6 +18,7 @@ use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
+    text::{Span, Spans},
     widgets::{Block, Paragraph, Widget},
     Frame, Terminal,
 };
@@ -102,6 +103,8 @@ impl DataSource for FileSource {
 struct HexDisplay {
     style: Style,
     source: Option<Rc<RefCell<Box<dyn DataSource>>>>,
+    pub cursor_start: u64,
+    pub cursor_end: u64,
 }
 
 impl HexDisplay {
@@ -109,6 +112,8 @@ impl HexDisplay {
         HexDisplay {
             style: Style::default(),
             source: None,
+            cursor_start: 0,
+            cursor_end: 0,
         }
     }
 
@@ -125,32 +130,55 @@ impl HexDisplay {
 
 const COLUMNS: u8 = 2 * 8;
 
-fn render_hex(bytes: &[u8]) -> String {
-    let mut result = String::new();
+fn render_hex(bytes: &[u8], bytes_start: u64, cursor_start: u64, cursor_end: u64) -> Vec<Spans> {
+    // let mut result: Option<Text> = None;
+    let mut lines: Vec<Spans> = vec![];
+    let mut spans = vec![];
 
     const BLOCKSIZE: u8 = 2;
     let mut column = 0;
+    let mut byte = bytes_start;
 
+    const COLOR_CURSOR_BACKGROUND: Color = Color::Rgb(0, 96, 0);
+    const COLOR_CURSOR_FOREGROUND: Color = Color::Rgb(96, 255, 96);
+    let cursor_style = Style::default()
+        .bg(COLOR_CURSOR_BACKGROUND)
+        .fg(COLOR_CURSOR_FOREGROUND);
     bytes.iter().for_each(|value| {
-        result.push_str(format!("{:02x}", value).as_str());
+        let style = if byte >= cursor_start && byte < cursor_end {
+            cursor_style
+        } else {
+            Style::default()
+        };
+        if column > 0 && column % BLOCKSIZE == 0 {
+            spans.push(Span::styled(
+                " ",
+                if byte == cursor_start {
+                    Style::default()
+                } else {
+                    style
+                },
+            ));
+        };
+
+        let text = format!("{:02x}", value);
+        spans.push(Span::styled(text, style));
+
         column += 1;
         if column == COLUMNS {
-            result.push('\n');
+            lines.push(Spans::from(spans.clone()));
+            spans.clear();
             column = 0;
-        } else if column % BLOCKSIZE == 0 {
-            result.push(' ');
         }
+
+        byte += 1;
     });
 
-    while column < COLUMNS {
-        result.push_str("..");
-        column += 1;
-        if column < COLUMNS && column % BLOCKSIZE == 0 {
-            result.push(' ');
-        }
+    if !spans.is_empty() {
+        lines.push(Spans::from(spans.clone()));
     }
 
-    result
+    lines
 }
 
 impl Widget for HexDisplay {
@@ -158,9 +186,16 @@ impl Widget for HexDisplay {
         let data = self.source.unwrap();
         let mut data = data.borrow_mut();
         let data = data.fetch(0, 1024);
-        Paragraph::new(render_hex(data))
-            .style(self.style)
-            .render(area, buf);
+        // TODO get data_start from data.fetch()
+        let data_start = 0;
+        Paragraph::new(render_hex(
+            data,
+            data_start,
+            self.cursor_start,
+            self.cursor_end,
+        ))
+        .style(self.style)
+        .render(area, buf);
     }
 }
 
@@ -291,6 +326,8 @@ pub struct App {
     source_name: String,
     hex_display: HexDisplay,
     unicode_display: UnicodeDisplay,
+    cursor_start: u64,
+    cursor_end: u64, // one past the last character
 }
 
 impl App {
@@ -326,13 +363,21 @@ impl App {
             source_name,
             hex_display,
             unicode_display,
+            cursor_start: 0,
+            cursor_end: 1,
         })
     }
 
     fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), io::Error> {
+        self.send_state();
         terminal.draw(|f| self.paint(f))?;
 
         Ok(())
+    }
+
+    fn send_state(&mut self) {
+        self.hex_display.cursor_start = self.cursor_start;
+        self.hex_display.cursor_end = self.cursor_end;
     }
 
     fn paint<B: Backend>(&self, f: &mut Frame<B>) {
@@ -433,6 +478,34 @@ impl<B: Backend> EventLoop<B> {
                                 nix::sys::signal::SIGTSTP,
                             )
                             .ok();
+                        }
+
+                        (KeyModifiers::NONE, KeyCode::Char('l')) => {
+                            assert!(self.app.cursor_start <= self.app.cursor_end);
+
+                            if self.app.cursor_end < u64::MAX {
+                                self.app.cursor_start += 1;
+                                self.app.cursor_end += 1;
+                            }
+                        }
+
+                        (KeyModifiers::NONE, KeyCode::Char('h')) => {
+                            assert!(self.app.cursor_end >= self.app.cursor_start);
+
+                            if self.app.cursor_start > 0 {
+                                self.app.cursor_start -= 1;
+                                self.app.cursor_end -= 1;
+                            }
+                        }
+
+                        (KeyModifiers::SHIFT, KeyCode::Char('L')) => {
+                            self.app.cursor_end = self.app.cursor_end.saturating_add(1);
+                        }
+
+                        (KeyModifiers::SHIFT, KeyCode::Char('H')) => {
+                            if self.app.cursor_end > self.app.cursor_start + 1 {
+                                self.app.cursor_end -= 1;
+                            }
                         }
 
                         (_, _) => {}
