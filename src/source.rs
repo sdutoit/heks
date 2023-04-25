@@ -2,9 +2,14 @@ use memmap2::{Mmap, MmapOptions};
 use std::io::{self, ErrorKind};
 use std::{cmp::min, fs::File, ops::Range, path::PathBuf};
 
+pub struct Slice<'a> {
+    pub data: &'a [u8],
+    pub location: Range<u64>,
+}
+
 pub trait DataSource {
     fn name(&self) -> &str;
-    fn fetch(&mut self, offset: u64, size: u32) -> &[u8];
+    fn fetch(&mut self, start: u64, end: u64) -> Slice;
 }
 
 struct DebugSource {
@@ -29,8 +34,11 @@ impl DataSource for DebugSource {
     fn name(&self) -> &str {
         "debug"
     }
-    fn fetch(&mut self, offset: u64, size: u32) -> &[u8] {
-        &self.buffer[clamp(offset, size, self.buffer.len())]
+    fn fetch(&mut self, _offset: u64, _end: u64) -> Slice {
+        Slice {
+            data: self.buffer,
+            location: 0..self.buffer.len() as u64,
+        }
     }
 }
 
@@ -55,9 +63,9 @@ impl FileSource {
     }
 }
 
-fn clamp(offset: u64, size: u32, len: usize) -> Range<usize> {
-    let begin: usize = min(offset as usize, len);
-    let end: usize = min(offset as usize + size as usize, len);
+fn clamp(start: u64, end: u64, len: usize) -> Range<usize> {
+    let begin: usize = min(start as usize, len);
+    let end: usize = min(end as usize, len);
 
     begin..end
 }
@@ -67,13 +75,19 @@ impl DataSource for FileSource {
         self.name.as_str()
     }
 
-    fn fetch(&mut self, offset: u64, size: u32) -> &[u8] {
-        let range = clamp(offset, size, self.mmap.len());
+    fn fetch(&mut self, start: u64, end: u64) -> Slice {
+        let range = clamp(start, end, self.mmap.len());
 
         if !range.is_empty() {
-            self.mmap.get(range).unwrap()
+            Slice {
+                data: self.mmap.get(range.clone()).unwrap(),
+                location: range.start as u64..range.end as u64,
+            }
         } else {
-            &[]
+            Slice {
+                data: &[],
+                location: range.start as u64..range.end as u64,
+            }
         }
     }
 }

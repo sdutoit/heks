@@ -5,9 +5,9 @@ use crossterm::event::{poll, read, KeyCode, KeyEvent, KeyModifiers};
 use log::debug;
 use source::DataSource;
 use std::{
-    cell::RefCell,
+    cmp::min,
     io,
-    rc::Rc,
+    ops::Range,
     sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
@@ -26,7 +26,8 @@ use crate::terminal::color;
 #[derive(Clone)]
 struct HexDisplay {
     style: Style,
-    source: Option<Rc<RefCell<Box<dyn DataSource>>>>,
+    data: Vec<u8>,
+    data_start: u64,
     pub cursor: Cursor,
 }
 
@@ -34,14 +35,15 @@ impl HexDisplay {
     fn default() -> Self {
         HexDisplay {
             style: Style::default(),
-            source: None,
+            data: vec![],
+            data_start: 0,
             cursor: Cursor { start: 0, end: 0 },
         }
     }
 
-    fn source(mut self, source: Rc<RefCell<Box<dyn DataSource>>>) -> Self {
-        self.source = Some(source);
-        self
+    fn set_data(&mut self, data: Vec<u8>, data_start: u64) {
+        self.data = data;
+        self.data_start = data_start;
     }
 
     fn style(mut self, style: Style) -> Self {
@@ -52,7 +54,7 @@ impl HexDisplay {
 
 const COLUMNS: u8 = 2 * 8;
 
-fn render_hex(bytes: &[u8], bytes_start: u64, cursor_start: u64, cursor_end: u64) -> Vec<Spans> {
+fn render_hex(bytes: &[u8], bytes_start: u64, cursor: Cursor) -> Vec<Spans> {
     // let mut result: Option<Text> = None;
     let mut lines: Vec<Spans> = vec![];
     let mut spans = vec![];
@@ -63,7 +65,7 @@ fn render_hex(bytes: &[u8], bytes_start: u64, cursor_start: u64, cursor_end: u64
 
     let cursor_style = Style::default().bg(color(0, 96, 0)).fg(color(96, 255, 96));
     bytes.iter().for_each(|value| {
-        let style = if byte >= cursor_start && byte < cursor_end {
+        let style = if cursor.contains(byte) {
             cursor_style
         } else {
             Style::default()
@@ -71,7 +73,7 @@ fn render_hex(bytes: &[u8], bytes_start: u64, cursor_start: u64, cursor_end: u64
         if column > 0 && column % BLOCKSIZE == 0 {
             spans.push(Span::styled(
                 " ",
-                if byte == cursor_start {
+                if byte == cursor.start {
                     Style::default()
                 } else {
                     style
@@ -101,39 +103,31 @@ fn render_hex(bytes: &[u8], bytes_start: u64, cursor_start: u64, cursor_end: u64
 
 impl Widget for HexDisplay {
     fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
-        let data = self.source.unwrap();
-        let mut data = data.borrow_mut();
-        let data = data.fetch(0, 1024);
-        // TODO get data_start from data.fetch()
-        let data_start = 0;
-        Paragraph::new(render_hex(
-            data,
-            data_start,
-            self.cursor.start,
-            self.cursor.end,
-        ))
-        .style(self.style)
-        .render(area, buf);
+        Paragraph::new(render_hex(&self.data, self.data_start, self.cursor))
+            .style(self.style)
+            .render(area, buf);
     }
 }
 
 #[derive(Clone)]
 struct UnicodeDisplay {
     style: Style,
-    source: Option<Rc<RefCell<Box<dyn DataSource>>>>,
+    data: Vec<u8>,
+    data_start: u64,
 }
 
 impl UnicodeDisplay {
     fn default() -> Self {
         UnicodeDisplay {
             style: Style::default(),
-            source: None,
+            data: vec![],
+            data_start: 0,
         }
     }
 
-    fn source(mut self, source: Rc<RefCell<Box<dyn DataSource>>>) -> Self {
-        self.source = Some(source);
-        self
+    fn set_data(&mut self, data: Vec<u8>, data_start: u64) {
+        self.data = data;
+        self.data_start = data_start;
     }
 
     fn style(mut self, style: Style) -> Self {
@@ -231,10 +225,7 @@ fn render_unicode(bytes: &[u8]) -> String {
 
 impl Widget for UnicodeDisplay {
     fn render(self, area: tui::layout::Rect, buf: &mut tui::buffer::Buffer) {
-        let data = self.source.unwrap();
-        let mut data = data.borrow_mut();
-        let data = data.fetch(0, 1024);
-        let text = render_unicode(data);
+        let text = render_unicode(&self.data);
 
         Paragraph::new(text).style(self.style).render(area, buf);
     }
@@ -247,22 +238,20 @@ struct Cursor {
 }
 
 impl Cursor {
-    fn increment(&mut self) {
-        assert!(self.start <= self.end);
-
-        if self.end < u64::MAX {
-            self.start += 1;
-            self.end += 1;
-        }
+    fn contains(&self, location: u64) -> bool {
+        self.start <= location && location < self.end
     }
 
-    fn decrement(&mut self) {
-        assert!(self.end >= self.start);
+    fn increment(&mut self, delta: u64) {
+        let width = self.end - self.start;
+        self.end = self.end.saturating_add(delta);
+        self.start = self.end - width;
+    }
 
-        if self.start > 0 {
-            self.start -= 1;
-            self.end -= 1;
-        }
+    fn decrement(&mut self, delta: u64) {
+        let width = self.end - self.start;
+        self.start = self.start.saturating_sub(delta);
+        self.end = self.start + width;
     }
 
     fn grow(&mut self) {
@@ -292,10 +281,21 @@ impl Cursor {
         self.start = self.start.saturating_sub(width);
         self.end = self.start + width;
     }
+
+    fn clamp(&mut self, range: Range<u64>) {
+        let width = min(self.end - self.start, range.end - range.start);
+        if self.end > range.end {
+            self.end = range.end;
+            self.start = self.end - width;
+        } else if self.start < range.start {
+            self.start = range.start;
+            self.end = self.start - width;
+        }
+    }
 }
 
 pub struct App {
-    source_name: String,
+    source: Box<dyn DataSource>,
     hex_display: HexDisplay,
     unicode_display: UnicodeDisplay,
     cursor: Cursor,
@@ -307,27 +307,21 @@ impl App {
         source: Box<dyn DataSource>,
     ) -> Result<Self, io::Error> {
         terminal.hide_cursor()?;
-        let source = Rc::new(RefCell::new(source));
-        let source_name = source.borrow().name().to_string();
 
         let style_hex = Style::default()
             .bg(color(32, 32, 32))
             .fg(color(192, 192, 192));
 
-        let hex_display = HexDisplay::default()
-            .source(source.clone())
-            .style(style_hex);
+        let hex_display = HexDisplay::default().style(style_hex);
 
         let style_unicode = Style::default()
             .bg(color(64, 64, 64))
             .fg(color(192, 192, 192));
 
-        let unicode_display = UnicodeDisplay::default()
-            .source(source.clone())
-            .style(style_unicode);
+        let unicode_display = UnicodeDisplay::default().style(style_unicode);
 
         Ok(App {
-            source_name,
+            source,
             hex_display,
             unicode_display,
             cursor: Cursor { start: 0, end: 1 },
@@ -335,17 +329,12 @@ impl App {
     }
 
     fn draw<B: Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<(), io::Error> {
-        self.send_state();
         terminal.draw(|f| self.paint(f))?;
 
         Ok(())
     }
 
-    fn send_state(&mut self) {
-        self.hex_display.cursor = self.cursor;
-    }
-
-    fn paint<B: Backend>(&self, f: &mut Frame<B>) {
+    fn paint<B: Backend>(&mut self, f: &mut Frame<B>) {
         let style_frame = Style::default()
             .bg(color(0, 0, 192))
             .fg(color(224, 224, 224));
@@ -364,17 +353,42 @@ impl App {
 
         let header = Block::default()
             .style(style_frame)
-            .title(self.source_name.clone())
+            .title(self.source.name())
             .title_alignment(Alignment::Center);
         f.render_widget(header, stack[0]);
 
-        let file_display = Layout::default()
+        let display_areas = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(stack[1]);
 
-        f.render_widget(self.hex_display.clone(), file_display[0]);
-        f.render_widget(self.unicode_display.clone(), file_display[1]);
+        // TODO clamp the cursor to the data source? or do we do that after we
+        // fetch? I'd prefer no a priori knowledge about the data source's size.
+
+        let ui_columns = COLUMNS as u64;
+        let ui_rows = display_areas[0].height as u64;
+
+        let pos = self.cursor.start;
+        let column_zero_pos: u64 = pos.saturating_sub(pos % ui_columns);
+
+        let pos_row = column_zero_pos / ui_columns;
+
+        let ui_pos_row = (ui_rows / 2).min(pos_row);
+        let ui_first_pos = column_zero_pos - ui_pos_row * ui_columns;
+        let ui_view_end = ui_first_pos + ui_rows * ui_columns;
+
+        let slice = self.source.fetch(ui_first_pos, ui_view_end);
+
+        self.cursor.clamp(slice.location.clone());
+
+        self.hex_display.cursor = self.cursor;
+        self.hex_display
+            .set_data(slice.data.to_vec(), slice.location.start);
+        self.unicode_display
+            .set_data(slice.data.to_vec(), slice.location.start);
+
+        f.render_widget(self.hex_display.clone(), display_areas[0]);
+        f.render_widget(self.unicode_display.clone(), display_areas[1]);
 
         let footer = Block::default()
             .style(style_frame)
@@ -386,11 +400,20 @@ impl App {
     fn on_key(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Char('l')) | (KeyModifiers::NONE, KeyCode::Right) => {
-                self.cursor.increment();
+                self.cursor.increment(1);
             }
 
             (KeyModifiers::NONE, KeyCode::Char('h')) | (KeyModifiers::NONE, KeyCode::Left) => {
-                self.cursor.decrement();
+                self.cursor.decrement(1);
+            }
+            (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
+                self.cursor.increment(COLUMNS.into());
+            }
+
+            (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
+                if self.cursor.start >= COLUMNS.into() {
+                    self.cursor.decrement(COLUMNS.into());
+                }
             }
 
             (KeyModifiers::SHIFT, KeyCode::Char('L')) => {
