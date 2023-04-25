@@ -1,10 +1,10 @@
 use clap::Parser;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use heks::source::FileSource;
 use heks::terminal::TerminalSetup;
 use heks::App;
 use heks::EventLoop;
-use heks::FileSource;
 use home::home_dir;
 use log::error;
 use log::info;
