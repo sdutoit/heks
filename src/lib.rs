@@ -1,6 +1,7 @@
 pub mod terminal;
 
 use crossterm::event::{poll, read, KeyCode, KeyModifiers};
+use log::debug;
 use memmap2::{Mmap, MmapOptions};
 use std::{
     cell::RefCell,
@@ -480,7 +481,8 @@ impl<B: Backend> EventLoop<B> {
                             .ok();
                         }
 
-                        (KeyModifiers::NONE, KeyCode::Char('l')) => {
+                        (KeyModifiers::NONE, KeyCode::Char('l'))
+                        | (KeyModifiers::NONE, KeyCode::Right) => {
                             assert!(self.app.cursor_start <= self.app.cursor_end);
 
                             if self.app.cursor_end < u64::MAX {
@@ -489,7 +491,8 @@ impl<B: Backend> EventLoop<B> {
                             }
                         }
 
-                        (KeyModifiers::NONE, KeyCode::Char('h')) => {
+                        (KeyModifiers::NONE, KeyCode::Char('h'))
+                        | (KeyModifiers::NONE, KeyCode::Left) => {
                             assert!(self.app.cursor_end >= self.app.cursor_start);
 
                             if self.app.cursor_start > 0 {
@@ -508,7 +511,35 @@ impl<B: Backend> EventLoop<B> {
                             }
                         }
 
-                        (_, _) => {}
+                        (KeyModifiers::NONE, KeyCode::Tab)
+                        | (
+                            KeyModifiers::ALT,
+                            KeyCode::Char('f'), // Should be KeyCode::Right, but that's what I get from crossterm..
+                        ) => {
+                            assert!(self.app.cursor_start <= self.app.cursor_end);
+
+                            let width = self.app.cursor_end - self.app.cursor_start;
+
+                            self.app.cursor_end = self.app.cursor_end.saturating_add(width);
+                            self.app.cursor_start = self.app.cursor_end - width;
+                        }
+
+                        (KeyModifiers::SHIFT, KeyCode::BackTab)
+                        | (
+                            KeyModifiers::ALT,
+                            KeyCode::Char('b'), // Should be KeyCode::Left, but that's what I get from crossterm..
+                        ) => {
+                            assert!(self.app.cursor_start <= self.app.cursor_end);
+
+                            let width = self.app.cursor_end - self.app.cursor_start;
+
+                            self.app.cursor_start = self.app.cursor_start.saturating_sub(width);
+                            self.app.cursor_end = self.app.cursor_start + width;
+                        }
+
+                        (_, _) => {
+                            debug!("key event: {:?}", key);
+                        }
                     };
                 }
                 crossterm::event::Event::Mouse(_) => {}
