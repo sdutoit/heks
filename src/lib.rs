@@ -104,8 +104,7 @@ impl DataSource for FileSource {
 struct HexDisplay {
     style: Style,
     source: Option<Rc<RefCell<Box<dyn DataSource>>>>,
-    pub cursor_start: u64,
-    pub cursor_end: u64,
+    pub cursor: Cursor,
 }
 
 impl HexDisplay {
@@ -113,8 +112,7 @@ impl HexDisplay {
         HexDisplay {
             style: Style::default(),
             source: None,
-            cursor_start: 0,
-            cursor_end: 0,
+            cursor: Cursor { start: 0, end: 0 },
         }
     }
 
@@ -192,8 +190,8 @@ impl Widget for HexDisplay {
         Paragraph::new(render_hex(
             data,
             data_start,
-            self.cursor_start,
-            self.cursor_end,
+            self.cursor.start,
+            self.cursor.end,
         ))
         .style(self.style)
         .render(area, buf);
@@ -323,12 +321,65 @@ impl Widget for UnicodeDisplay {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Cursor {
+    start: u64,
+    end: u64, // one past the last character
+}
+
+impl Cursor {
+    fn increment(&mut self) {
+        assert!(self.start <= self.end);
+
+        if self.end < u64::MAX {
+            self.start += 1;
+            self.end += 1;
+        }
+    }
+
+    fn decrement(&mut self) {
+        assert!(self.end >= self.start);
+
+        if self.start > 0 {
+            self.start -= 1;
+            self.end -= 1;
+        }
+    }
+
+    fn grow(&mut self) {
+        self.end = self.end.saturating_add(1);
+    }
+
+    fn shrink(&mut self) {
+        if self.end > self.start + 1 {
+            self.end -= 1;
+        }
+    }
+
+    fn skip_right(&mut self) {
+        assert!(self.start <= self.end);
+
+        let width = self.end - self.start;
+
+        self.end = self.end.saturating_add(width);
+        self.start = self.end - width;
+    }
+
+    fn skip_left(&mut self) {
+        assert!(self.start <= self.end);
+
+        let width = self.end - self.start;
+
+        self.start = self.start.saturating_sub(width);
+        self.end = self.start + width;
+    }
+}
+
 pub struct App {
     source_name: String,
     hex_display: HexDisplay,
     unicode_display: UnicodeDisplay,
-    cursor_start: u64,
-    cursor_end: u64, // one past the last character
+    cursor: Cursor,
 }
 
 impl App {
@@ -364,8 +415,7 @@ impl App {
             source_name,
             hex_display,
             unicode_display,
-            cursor_start: 0,
-            cursor_end: 1,
+            cursor: Cursor { start: 0, end: 1 },
         })
     }
 
@@ -377,8 +427,7 @@ impl App {
     }
 
     fn send_state(&mut self) {
-        self.hex_display.cursor_start = self.cursor_start;
-        self.hex_display.cursor_end = self.cursor_end;
+        self.hex_display.cursor = self.cursor;
     }
 
     fn paint<B: Backend>(&self, f: &mut Frame<B>) {
@@ -424,31 +473,19 @@ impl App {
     fn on_key(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Char('l')) | (KeyModifiers::NONE, KeyCode::Right) => {
-                assert!(self.cursor_start <= self.cursor_end);
-
-                if self.cursor_end < u64::MAX {
-                    self.cursor_start += 1;
-                    self.cursor_end += 1;
-                }
+                self.cursor.increment();
             }
 
             (KeyModifiers::NONE, KeyCode::Char('h')) | (KeyModifiers::NONE, KeyCode::Left) => {
-                assert!(self.cursor_end >= self.cursor_start);
-
-                if self.cursor_start > 0 {
-                    self.cursor_start -= 1;
-                    self.cursor_end -= 1;
-                }
+                self.cursor.decrement();
             }
 
             (KeyModifiers::SHIFT, KeyCode::Char('L')) => {
-                self.cursor_end = self.cursor_end.saturating_add(1);
+                self.cursor.grow();
             }
 
             (KeyModifiers::SHIFT, KeyCode::Char('H')) => {
-                if self.cursor_end > self.cursor_start + 1 {
-                    self.cursor_end -= 1;
-                }
+                self.cursor.shrink();
             }
 
             (KeyModifiers::NONE, KeyCode::Tab)
@@ -456,12 +493,7 @@ impl App {
                 KeyModifiers::ALT,
                 KeyCode::Char('f'), // Should be KeyCode::Right, but that's what I get from crossterm..
             ) => {
-                assert!(self.cursor_start <= self.cursor_end);
-
-                let width = self.cursor_end - self.cursor_start;
-
-                self.cursor_end = self.cursor_end.saturating_add(width);
-                self.cursor_start = self.cursor_end - width;
+                self.cursor.skip_right();
             }
 
             (KeyModifiers::SHIFT, KeyCode::BackTab)
@@ -469,12 +501,7 @@ impl App {
                 KeyModifiers::ALT,
                 KeyCode::Char('b'), // Should be KeyCode::Left, but that's what I get from crossterm..
             ) => {
-                assert!(self.cursor_start <= self.cursor_end);
-
-                let width = self.cursor_end - self.cursor_start;
-
-                self.cursor_start = self.cursor_start.saturating_sub(width);
-                self.cursor_end = self.cursor_start + width;
+                self.cursor.skip_left();
             }
 
             (_, _) => {
