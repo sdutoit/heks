@@ -437,14 +437,6 @@ impl<B: Backend> EventLoop<B> {
 
                         (_, _) => {}
                     };
-
-                    if (key.modifiers.is_empty()
-                        && (key.code == KeyCode::Esc || key.code == KeyCode::Char('q')))
-                        || (key.modifiers == KeyModifiers::CONTROL
-                            && key.code == KeyCode::Char('c'))
-                    {
-                        self.done.store(true, std::sync::atomic::Ordering::Release);
-                    }
                 }
                 crossterm::event::Event::Mouse(_) => {}
                 crossterm::event::Event::Paste(_) => {}
