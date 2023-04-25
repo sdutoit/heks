@@ -5,6 +5,12 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use pastel::ansi::AnsiColor;
+
+pub fn color(r: u8, g: u8, b: u8) -> tui::style::Color {
+    // TODO: Just use Color::RGB if the terminal supports it.
+    tui::style::Color::Indexed(pastel::Color::from_rgb(r, g, b).to_ansi_8bit())
+}
 
 pub struct TerminalSetup {}
 

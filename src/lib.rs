@@ -15,11 +15,13 @@ use tokio::time::{sleep_until, Instant};
 use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Style},
+    style::Style,
     text::{Span, Spans},
     widgets::{Block, Paragraph, Widget},
     Frame, Terminal,
 };
+
+use crate::terminal::color;
 
 #[derive(Clone)]
 struct HexDisplay {
@@ -59,11 +61,7 @@ fn render_hex(bytes: &[u8], bytes_start: u64, cursor_start: u64, cursor_end: u64
     let mut column = 0;
     let mut byte = bytes_start;
 
-    const COLOR_CURSOR_BACKGROUND: Color = Color::Rgb(0, 96, 0);
-    const COLOR_CURSOR_FOREGROUND: Color = Color::Rgb(96, 255, 96);
-    let cursor_style = Style::default()
-        .bg(COLOR_CURSOR_BACKGROUND)
-        .fg(COLOR_CURSOR_FOREGROUND);
+    let cursor_style = Style::default().bg(color(0, 96, 0)).fg(color(96, 255, 96));
     bytes.iter().for_each(|value| {
         let style = if byte >= cursor_start && byte < cursor_end {
             cursor_style
@@ -312,21 +310,17 @@ impl App {
         let source = Rc::new(RefCell::new(source));
         let source_name = source.borrow().name().to_string();
 
-        const COLOR_HEX_BACKGROUND: Color = Color::Rgb(32, 32, 32);
-        const COLOR_HEX_FOREGROUND: Color = Color::Rgb(192, 192, 192);
         let style_hex = Style::default()
-            .bg(COLOR_HEX_BACKGROUND)
-            .fg(COLOR_HEX_FOREGROUND);
+            .bg(color(32, 32, 32))
+            .fg(color(192, 192, 192));
 
         let hex_display = HexDisplay::default()
             .source(source.clone())
             .style(style_hex);
 
-        const COLOR_UNICODE_BACKGROUND: Color = Color::Rgb(64, 64, 64);
-        const COLOR_UNICODE_FOREGROUND: Color = Color::Rgb(192, 192, 192);
         let style_unicode = Style::default()
-            .bg(COLOR_UNICODE_BACKGROUND)
-            .fg(COLOR_UNICODE_FOREGROUND);
+            .bg(color(64, 64, 64))
+            .fg(color(192, 192, 192));
 
         let unicode_display = UnicodeDisplay::default()
             .source(source.clone())
@@ -352,11 +346,9 @@ impl App {
     }
 
     fn paint<B: Backend>(&self, f: &mut Frame<B>) {
-        const COLOR_FRAME_BACKGROUND: Color = Color::Rgb(0, 0, 64);
-        const COLOR_FRAME_FOREGROUND: Color = Color::Rgb(128, 128, 192);
         let style_frame = Style::default()
-            .bg(COLOR_FRAME_BACKGROUND)
-            .fg(COLOR_FRAME_FOREGROUND);
+            .bg(color(0, 0, 192))
+            .fg(color(224, 224, 224));
 
         let stack = Layout::default()
             .direction(Direction::Vertical)
