@@ -301,9 +301,6 @@ impl App {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
             .split(stack[1]);
 
-        // TODO clamp the cursor to the data source? or do we do that after we
-        // fetch? I'd prefer no a priori knowledge about the data source's size.
-
         let ui_columns = COLUMNS as u64;
         self.display_height = display_areas[0].height;
         let ui_rows = self.display_height as u64;
@@ -322,6 +319,7 @@ impl App {
         let ui_view_end = ui_first_pos + ui_rows * ui_columns;
 
         let slice = self.source.fetch(ui_first_pos, ui_view_end);
+        let slice = slice.align_up(COLUMNS as u64);
 
         self.cursor.clamp(slice.location.clone());
 

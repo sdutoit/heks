@@ -2,9 +2,26 @@ use memmap2::{Mmap, MmapOptions};
 use std::io::{self, ErrorKind};
 use std::{cmp::min, fs::File, ops::Range, path::PathBuf};
 
+#[derive(Debug)]
 pub struct Slice<'a> {
     pub data: &'a [u8],
     pub location: Range<u64>,
+}
+
+impl<'a> Slice<'a> {
+    pub fn align_up(&self, align: u64) -> Slice<'a> {
+        let misalignment = self.location.start % align;
+        let offset = if misalignment > 0 {
+            align - misalignment
+        } else {
+            0
+        };
+
+        let location = (self.location.start + offset).min(self.location.end)..self.location.end;
+        let data = &self.data[(offset as usize).min(self.data.len())..];
+
+        Slice { data, location }
+    }
 }
 
 pub trait DataSource {
