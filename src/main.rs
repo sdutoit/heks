@@ -3,6 +3,7 @@ use futures::{stream::FuturesUnordered, StreamExt};
 use heks::{source::FileSource, terminal::TerminalSetup, App, EventLoop};
 use home::home_dir;
 use log::{error, info};
+use nix::unistd::getcwd;
 use std::{env, fs::OpenOptions, io, path::PathBuf, process::ExitCode, sync::Arc};
 use tokio::signal::unix::{signal, SignalKind};
 use tui::{backend::CrosstermBackend, Terminal};
@@ -70,9 +71,10 @@ async fn main() -> ExitCode {
     logger.init();
     log_panics::init();
 
-    info!("========");
-    info!("STARTUP: {}", shell_words::join(env::args()));
-    info!("========");
+    info!("############################## 🧹 𝓱𝓮𝓴𝓼 🧹 ##############################");
+    info!("args: {}", shell_words::join(env::args()));
+    info!(" cwd: {}", getcwd().unwrap().display());
+    info!("");
 
     let args = Args::parse();
 

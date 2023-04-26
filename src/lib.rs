@@ -392,7 +392,7 @@ impl App {
 
         let footer = Block::default()
             .style(style_frame)
-            .title("heks 🧹")
+            .title("🧹 𝓱𝓮𝓴𝓼 🧹")
             .title_alignment(Alignment::Center);
         f.render_widget(footer, stack[2]);
     }
