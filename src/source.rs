@@ -63,11 +63,21 @@ impl FileSource {
     }
 }
 
-fn clamp(start: u64, end: u64, len: usize) -> Range<usize> {
-    let begin: usize = min(start as usize, len);
-    let end: usize = min(end as usize, len);
+fn clamp(start: u64, end: u64, len: u64) -> Range<u64> {
+    let size = min(end - start, len);
 
-    begin..end
+    let mut start = start;
+    let mut end = end;
+
+    if start >= len {
+        start = len - size;
+        end = start + size;
+    } else if end >= len {
+        end = len;
+        start = end - size;
+    };
+
+    start..end
 }
 
 impl DataSource for FileSource {
@@ -76,17 +86,18 @@ impl DataSource for FileSource {
     }
 
     fn fetch(&mut self, start: u64, end: u64) -> Slice {
-        let range = clamp(start, end, self.mmap.len());
+        let range = clamp(start, end, self.mmap.len() as u64);
 
         if !range.is_empty() {
+            let range_usize = range.start as usize..range.end as usize;
             Slice {
-                data: self.mmap.get(range.clone()).unwrap(),
-                location: range.start as u64..range.end as u64,
+                data: self.mmap.get(range_usize.clone()).unwrap(),
+                location: range,
             }
         } else {
             Slice {
                 data: &[],
-                location: range.start as u64..range.end as u64,
+                location: range,
             }
         }
     }

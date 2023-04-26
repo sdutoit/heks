@@ -1,13 +1,13 @@
+pub mod cursor;
 pub mod source;
 pub mod terminal;
 
+use crate::cursor::Cursor;
 use crossterm::event::{poll, read, KeyCode, KeyEvent, KeyModifiers};
 use log::debug;
 use source::DataSource;
 use std::{
-    cmp::min,
     io,
-    ops::Range,
     sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
@@ -73,7 +73,7 @@ fn render_hex(bytes: &[u8], bytes_start: u64, cursor: Cursor) -> Vec<Spans> {
         if column > 0 && column % BLOCKSIZE == 0 {
             spans.push(Span::styled(
                 " ",
-                if byte == cursor.start {
+                if byte == cursor.start() {
                     Style::default()
                 } else {
                     style
@@ -231,74 +231,12 @@ impl Widget for UnicodeDisplay {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-struct Cursor {
-    start: u64,
-    end: u64, // one past the last character
-}
-
-impl Cursor {
-    fn contains(&self, location: u64) -> bool {
-        self.start <= location && location < self.end
-    }
-
-    fn increment(&mut self, delta: u64) {
-        let width = self.end - self.start;
-        self.end = self.end.saturating_add(delta);
-        self.start = self.end - width;
-    }
-
-    fn decrement(&mut self, delta: u64) {
-        let width = self.end - self.start;
-        self.start = self.start.saturating_sub(delta);
-        self.end = self.start + width;
-    }
-
-    fn grow(&mut self) {
-        self.end = self.end.saturating_add(1);
-    }
-
-    fn shrink(&mut self) {
-        if self.end > self.start + 1 {
-            self.end -= 1;
-        }
-    }
-
-    fn skip_right(&mut self) {
-        assert!(self.start <= self.end);
-
-        let width = self.end - self.start;
-
-        self.end = self.end.saturating_add(width);
-        self.start = self.end - width;
-    }
-
-    fn skip_left(&mut self) {
-        assert!(self.start <= self.end);
-
-        let width = self.end - self.start;
-
-        self.start = self.start.saturating_sub(width);
-        self.end = self.start + width;
-    }
-
-    fn clamp(&mut self, range: Range<u64>) {
-        let width = min(self.end - self.start, range.end - range.start);
-        if self.end > range.end {
-            self.end = range.end;
-            self.start = self.end - width;
-        } else if self.start < range.start {
-            self.start = range.start;
-            self.end = self.start - width;
-        }
-    }
-}
-
 pub struct App {
     source: Box<dyn DataSource>,
     hex_display: HexDisplay,
     unicode_display: UnicodeDisplay,
     cursor: Cursor,
+    display_height: u16, // Number of rows in the content displays
 }
 
 impl App {
@@ -325,6 +263,7 @@ impl App {
             hex_display,
             unicode_display,
             cursor: Cursor { start: 0, end: 1 },
+            display_height: 0,
         })
     }
 
@@ -366,9 +305,14 @@ impl App {
         // fetch? I'd prefer no a priori knowledge about the data source's size.
 
         let ui_columns = COLUMNS as u64;
-        let ui_rows = display_areas[0].height as u64;
+        self.display_height = display_areas[0].height;
+        let ui_rows = self.display_height as u64;
 
-        let pos = self.cursor.start;
+        // We'll clamp the cursor to within the slice we managed to fetch from
+        // the source further down, but for now let's not make any assumptions
+        // about it. For example, it may have been set to u64::MAX to skip to
+        // the end.
+        let pos = self.cursor.start().min(u64::MAX - ui_columns * ui_rows);
         let column_zero_pos: u64 = pos.saturating_sub(pos % ui_columns);
 
         let pos_row = column_zero_pos / ui_columns;
@@ -384,6 +328,7 @@ impl App {
         self.hex_display.cursor = self.cursor;
         self.hex_display
             .set_data(slice.data.to_vec(), slice.location.start);
+
         self.unicode_display
             .set_data(slice.data.to_vec(), slice.location.start);
 
@@ -411,7 +356,7 @@ impl App {
             }
 
             (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
-                if self.cursor.start >= COLUMNS.into() {
+                if self.cursor.start() >= COLUMNS.into() {
                     self.cursor.decrement(COLUMNS.into());
                 }
             }
@@ -439,6 +384,18 @@ impl App {
             ) => {
                 self.cursor.skip_left();
             }
+
+            (KeyModifiers::NONE, KeyCode::PageDown) => self
+                .cursor
+                .increment(COLUMNS as u64 * (self.display_height as u64 / 2)),
+
+            (KeyModifiers::NONE, KeyCode::PageUp) => self
+                .cursor
+                .decrement(COLUMNS as u64 * (self.display_height as u64 / 2)),
+
+            (KeyModifiers::NONE, KeyCode::Home) => self.cursor.decrement(u64::MAX),
+
+            (KeyModifiers::NONE, KeyCode::End) => self.cursor.increment(u64::MAX),
 
             (_, _) => {
                 debug!("key event: {:?}", key);
