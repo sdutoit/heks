@@ -13,10 +13,10 @@ impl Cursor {
     }
 
     pub fn start(&self) -> u64 {
-        return self.start;
+        self.start
     }
     pub fn end(&self) -> u64 {
-        return self.end;
+        self.end
     }
 
     pub fn contains(&self, location: u64) -> bool {

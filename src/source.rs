@@ -91,7 +91,7 @@ impl DataSource for FileSource {
         if !range.is_empty() {
             let range_usize = range.start as usize..range.end as usize;
             Slice {
-                data: self.mmap.get(range_usize.clone()).unwrap(),
+                data: self.mmap.get(range_usize).unwrap(),
                 location: range,
             }
         } else {
