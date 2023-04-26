@@ -48,6 +48,7 @@ fn init_log_file(logger: &mut env_logger::Builder, path: PathBuf) {
     let log_file = OpenOptions::new()
         .write(true)
         .append(true)
+        .create(true)
         .open(path)
         .unwrap();
     let target = Box::new(log_file);
