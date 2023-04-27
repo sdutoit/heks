@@ -55,7 +55,6 @@ impl HexDisplay {
 const COLUMNS: u8 = 2 * 8;
 
 fn render_hex(bytes: &[u8], bytes_start: u64, cursor: Cursor) -> Vec<Spans> {
-    // let mut result: Option<Text> = None;
     let mut lines: Vec<Spans> = vec![];
     let mut spans = vec![];
 
