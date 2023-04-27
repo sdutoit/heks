@@ -187,7 +187,85 @@ mod tests {
         assert_eq!(c, Cursor::new(0, 10000));
     }
 
-    // TODO: grow, shrink, skip_right, skip_left
+    #[test]
+    fn test_grow() {
+        let mut c = Cursor::new(123, 456);
+        c.grow();
+        assert_eq!(c, Cursor::new(123, 457));
+        c.grow();
+        assert_eq!(c, Cursor::new(123, 458));
+
+        let mut c = Cursor::new(u64::MAX - 8, u64::MAX - 2);
+        c.grow();
+        assert_eq!(c, Cursor::new(u64::MAX - 8, u64::MAX - 1));
+        c.grow();
+        assert_eq!(c, Cursor::new(u64::MAX - 8, u64::MAX));
+        c.grow();
+        assert_eq!(c, Cursor::new(u64::MAX - 8, u64::MAX));
+    }
+
+    #[test]
+    fn test_shrink() {
+        let mut c = Cursor::new(123, 456);
+        c.shrink();
+        assert_eq!(c, Cursor::new(123, 455));
+        c.shrink();
+        assert_eq!(c, Cursor::new(123, 454));
+
+        let mut c = Cursor::new(1000, 1002);
+        c.shrink();
+        assert_eq!(c, Cursor::new(1000, 1001));
+        c.shrink();
+        assert_eq!(c, Cursor::new(1000, 1001));
+
+        let mut c = Cursor::new(1000, 1000);
+        c.shrink();
+        assert_eq!(c, Cursor::new(1000, 1000));
+
+        let mut c = Cursor::new(0, 2);
+        c.shrink();
+        assert_eq!(c, Cursor::new(0, 1));
+        c.shrink();
+        assert_eq!(c, Cursor::new(0, 1));
+    }
+
+    #[test]
+    fn test_skip_right() {
+        let mut c = Cursor::new(7, 10);
+        c.skip_right();
+        assert_eq!(c, Cursor::new(10, 13));
+        c.skip_right();
+        assert_eq!(c, Cursor::new(13, 16));
+
+        let mut c = Cursor::new(100, 100);
+        c.skip_right();
+        assert_eq!(c, Cursor::new(100, 100));
+
+        let mut c = Cursor::new(u64::MAX - 5, u64::MAX - 3);
+        c.skip_right();
+        assert_eq!(c, Cursor::new(u64::MAX - 3, u64::MAX - 1));
+        c.skip_right();
+        assert_eq!(c, Cursor::new(u64::MAX - 2, u64::MAX));
+        c.skip_right();
+        assert_eq!(c, Cursor::new(u64::MAX - 2, u64::MAX));
+    }
+
+    #[test]
+    fn test_skip_left() {
+        let mut c = Cursor::new(7, 10);
+        c.skip_left();
+        assert_eq!(c, Cursor::new(4, 7));
+        c.skip_left();
+        assert_eq!(c, Cursor::new(1, 4));
+        c.skip_left();
+        assert_eq!(c, Cursor::new(0, 3));
+        c.skip_left();
+        assert_eq!(c, Cursor::new(0, 3));
+
+        let mut c = Cursor::new(100, 100);
+        c.skip_left();
+        assert_eq!(c, Cursor::new(100, 100));
+    }
 
     #[test]
     fn test_clamp() {
