@@ -194,15 +194,54 @@ mod tests {
         let mut c = Cursor::new(0, 1);
         c.clamp(0u64..u64::MAX);
         assert_eq!(c, Cursor::new(0, 1));
+        c.clamp(1u64..u64::MAX);
+        assert_eq!(c, Cursor::new(1, 2));
+        c.clamp(10u64..u64::MAX);
+        assert_eq!(c, Cursor::new(10, 11));
+        c.clamp(u64::MAX - 1..u64::MAX);
+        assert_eq!(c, Cursor::new(u64::MAX - 1, u64::MAX));
+        c.clamp(0u64..100u64);
+        assert_eq!(c, Cursor::new(99, 100));
 
-        let mut c = Cursor::new(0, u64::MAX);
-        c.clamp(123u64..456u64);
-        assert_eq!(c, Cursor::new(123, 456));
+        // Singleton cases -- make sure we preserve the location even if nothing
+        // is selected.
+        let mut c = Cursor::new(0, 1);
+        c.clamp(u64::MAX..u64::MAX);
+        assert_eq!(c, Cursor::new(u64::MAX, u64::MAX));
+        c.clamp(100u64..100u64);
+        assert_eq!(c, Cursor::new(100, 100));
+        c.clamp(0u64..0u64);
+        assert_eq!(c, Cursor::new(0, 0));
 
-        let mut c = Cursor::new(u64::MAX - 1, u64::MAX);
-        c.clamp(123u64..456u64);
-        assert_eq!(c, Cursor::new(455, 456));
+        // Wider than one character
+        let mut c = Cursor::new(100, 200);
+        c.clamp(100u64..200u64);
+        assert_eq!(c, Cursor::new(100, 200));
+        c.clamp(50u64..200u64);
+        assert_eq!(c, Cursor::new(100, 200));
+        c.clamp(100u64..250u64);
+        assert_eq!(c, Cursor::new(100, 200));
 
-        // TODO: lots more cases!
+        // Values near/at u64::MAX
+        let mut c = Cursor::new(100, 200);
+        c.clamp(u64::MAX - 150..u64::MAX);
+        assert_eq!(c, Cursor::new(u64::MAX - 150, u64::MAX - 50));
+        c.clamp(u64::MAX - 100..u64::MAX);
+        assert_eq!(c, Cursor::new(u64::MAX - 100, u64::MAX));
+        c.clamp(u64::MAX - 50..u64::MAX);
+        assert_eq!(c, Cursor::new(u64::MAX - 50, u64::MAX));
+        c.clamp(u64::MAX - 50..u64::MAX - 10);
+        assert_eq!(c, Cursor::new(u64::MAX - 50, u64::MAX - 10));
+        c.clamp(u64::MAX - 60..u64::MAX - 20);
+        assert_eq!(c, Cursor::new(u64::MAX - 60, u64::MAX - 20));
+        c.clamp(0u64..100u64);
+        assert_eq!(c, Cursor::new(60, 100));
+        c.clamp(10u64..20u64);
+        assert_eq!(c, Cursor::new(10, 20));
+
+        // Typical case: cursor at +inf, clamp back to what's on the screen.
+        let mut c = Cursor::new(u64::MAX - 4, u64::MAX);
+        c.clamp(128u64..256u64);
+        assert_eq!(c, Cursor::new(252u64, 256u64));
     }
 }
