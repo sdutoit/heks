@@ -102,6 +102,7 @@ async fn main() -> ExitCode {
     });
 
     let terminal_clone = Arc::clone(&event_loop.terminal);
+    let dirty_clone = Arc::clone(&event_loop.dirty);
     install_suspend_handler(move || {
         TerminalSetup::hide().ok();
         {
@@ -115,6 +116,8 @@ async fn main() -> ExitCode {
         let mut terminal = terminal_clone.lock().unwrap();
         terminal.hide_cursor().ok();
         terminal.clear().ok();
+
+        dirty_clone.store(true, std::sync::atomic::Ordering::Release);
     });
 
     event_loop.run().await.unwrap();

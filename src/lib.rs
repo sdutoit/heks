@@ -406,6 +406,7 @@ pub struct EventLoop<B: Backend> {
     pub terminal: Arc<Mutex<Terminal<B>>>,
     pub app: App,
     pub done: Arc<AtomicBool>,
+    pub dirty: Arc<AtomicBool>,
 }
 
 impl<B: Backend> EventLoop<B> {
@@ -414,7 +415,12 @@ impl<B: Backend> EventLoop<B> {
             terminal: Arc::new(Mutex::new(terminal)),
             app,
             done: Arc::new(AtomicBool::new(false)),
+            dirty: Arc::new(AtomicBool::new(true)),
         }
+    }
+
+    pub fn mark_dirty(&mut self) {
+        self.dirty.store(true, std::sync::atomic::Ordering::Release);
     }
 
     pub async fn run(&mut self) -> io::Result<()> {
@@ -436,16 +442,23 @@ impl<B: Backend> EventLoop<B> {
     }
 
     pub fn tick(&mut self) -> io::Result<()> {
-        self.handle_events()?;
+        if self.handle_events()? {
+            self.dirty.store(true, std::sync::atomic::Ordering::Release);
+        }
 
-        let mut terminal = self.terminal.lock().unwrap();
-        self.app.draw(&mut terminal)?;
+        if self.dirty.swap(false, std::sync::atomic::Ordering::Acquire) {
+            let mut terminal = self.terminal.lock().unwrap();
+            self.app.draw(&mut terminal)?;
+        }
 
         Ok(())
     }
 
-    fn handle_events(&mut self) -> io::Result<()> {
+    fn handle_events(&mut self) -> io::Result<bool> {
+        let mut seen_event = false;
         while poll(Duration::from_secs(0))? {
+            seen_event = true;
+
             let event = read()?;
             match event {
                 Event::FocusGained => {}
@@ -472,6 +485,6 @@ impl<B: Backend> EventLoop<B> {
             }
         }
 
-        Ok(())
+        Ok(seen_event)
     }
 }
