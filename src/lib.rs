@@ -3,8 +3,9 @@ pub mod source;
 pub mod terminal;
 
 use crate::cursor::Cursor;
-use crossterm::event::{poll, read, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers};
 use log::debug;
+use nix::{sys::signal, unistd::getpid};
 use source::DataSource;
 use std::{
     io,
@@ -435,36 +436,41 @@ impl<B: Backend> EventLoop<B> {
     }
 
     pub fn tick(&mut self) -> io::Result<()> {
+        self.handle_events()?;
+
+        let mut terminal = self.terminal.lock().unwrap();
+        self.app.draw(&mut terminal)?;
+
+        Ok(())
+    }
+
+    fn handle_events(&mut self) -> io::Result<()> {
         while poll(Duration::from_secs(0))? {
             let event = read()?;
             match event {
-                crossterm::event::Event::FocusGained => {}
-                crossterm::event::Event::FocusLost => {}
-                crossterm::event::Event::Key(key) => match (key.modifiers, key.code) {
+                Event::FocusGained => {}
+                Event::FocusLost => {}
+                Event::Key(key) => match (key.modifiers, key.code) {
                     (KeyModifiers::NONE, KeyCode::Esc)
                     | (KeyModifiers::NONE, KeyCode::Char('q')) => {
                         self.done.store(true, std::sync::atomic::Ordering::Release);
                     }
 
                     (KeyModifiers::CONTROL, KeyCode::Char('c')) => {
-                        nix::sys::signal::kill(nix::unistd::getpid(), nix::sys::signal::SIGINT)
-                            .ok();
+                        signal::kill(getpid(), signal::SIGINT).ok();
                     }
 
                     (KeyModifiers::CONTROL, KeyCode::Char('z')) => {
-                        nix::sys::signal::kill(nix::unistd::getpid(), nix::sys::signal::SIGTSTP)
-                            .ok();
+                        signal::kill(getpid(), signal::SIGTSTP).ok();
                     }
+
                     (_, _) => self.app.on_key(key),
                 },
-                crossterm::event::Event::Mouse(_) => {}
-                crossterm::event::Event::Paste(_) => {}
-                crossterm::event::Event::Resize(_, _) => {}
+                Event::Mouse(_) => {}
+                Event::Paste(_) => {}
+                Event::Resize(_, _) => {}
             }
         }
-
-        let mut terminal = self.terminal.lock().unwrap();
-        self.app.draw(&mut terminal)?;
 
         Ok(())
     }
