@@ -160,7 +160,7 @@ fn unicode_superscript_hex(byte: u8) -> char {
     }
 }
 
-fn render_unicode_byte(byte: u8) -> String {
+fn render_unicode_byte_as_hex(byte: u8) -> String {
     let high = byte / 16;
     let low = byte % 16;
 
@@ -171,55 +171,62 @@ fn render_unicode_byte(byte: u8) -> String {
     )
 }
 
+fn render_unicode_byte(byte: u8) -> String {
+    match byte {
+        // non-printable lower range
+        0 => "⓪ ".to_string(),
+        1 => "① ".to_string(),
+        2 => "② ".to_string(),
+        3 => "③ ".to_string(),
+        4 => "④ ".to_string(),
+        5 => "⑤ ".to_string(),
+        6 => "⑥ ".to_string(),
+        7 => "⑦ ".to_string(),
+        8 => "⑧ ".to_string(),
+        9 => "⑨ ".to_string(),
+        0xa => "Ⓐ ".to_string(),
+        0xb => "Ⓑ ".to_string(),
+        0xc => "Ⓒ ".to_string(),
+        0xd => "Ⓓ ".to_string(),
+        0xe => "Ⓔ ".to_string(),
+        0xf => "Ⓕ ".to_string(),
+        0x10 => "0̚ ".to_string(),
+        0x11 => "1̚ ".to_string(),
+        0x12 => "2̚ ".to_string(),
+        0x13 => "3̚ ".to_string(),
+        0x14 => "4̚ ".to_string(),
+        0x15 => "5̚ ".to_string(),
+        0x16 => "6̚ ".to_string(),
+        0x17 => "7̚ ".to_string(),
+        0x18 => "8̚ ".to_string(),
+        0x19 => "9̚ ".to_string(),
+        0x1a => "a̚ ".to_string(),
+        0x1b => "b̚ ".to_string(),
+        0x1c => "c̚ ".to_string(),
+        0x1d => "d̚ ".to_string(),
+        0x1e => "e̚ ".to_string(),
+        0x1f => "f̚ ".to_string(),
+
+        // printable ASCII
+        0x20..=0x7e => format!("{} ", byte as char),
+
+        // non-printable upper range, including not just everything with the
+        // high bit set (non-ASCII), but also 127/0x7f (DEL).
+        0x7f..=0xff => render_unicode_byte_as_hex(byte),
+    }
+}
+
 fn render_unicode(bytes: &[u8]) -> String {
     let mut column = 0;
     let mut result = String::new();
-    bytes
-        .iter()
-        .map(|&c| match c {
-            0 => "⓪ ".to_string(),
-            1 => "① ".to_string(),
-            2 => "② ".to_string(),
-            3 => "③ ".to_string(),
-            4 => "④ ".to_string(),
-            5 => "⑤ ".to_string(),
-            6 => "⑥ ".to_string(),
-            7 => "⑦ ".to_string(),
-            8 => "⑧ ".to_string(),
-            9 => "⑨ ".to_string(),
-            0xa => "Ⓐ ".to_string(),
-            0xb => "Ⓑ ".to_string(),
-            0xc => "Ⓒ ".to_string(),
-            0xd => "Ⓓ ".to_string(),
-            0xe => "Ⓔ ".to_string(),
-            0xf => "Ⓕ ".to_string(),
-            0x10 => "0̚ ".to_string(),
-            0x11 => "1̚ ".to_string(),
-            0x12 => "2̚ ".to_string(),
-            0x13 => "3̚ ".to_string(),
-            0x14 => "4̚ ".to_string(),
-            0x15 => "5̚ ".to_string(),
-            0x16 => "6̚ ".to_string(),
-            0x17 => "7̚ ".to_string(),
-            0x18 => "8̚ ".to_string(),
-            0x19 => "9̚ ".to_string(),
-            0x1a => "a̚ ".to_string(),
-            0x1b => "b̚ ".to_string(),
-            0x1c => "c̚ ".to_string(),
-            0x1d => "d̚ ".to_string(),
-            0x1e => "e̚ ".to_string(),
-            0x1f => "f̚ ".to_string(),
-            0x7f..=0xff => render_unicode_byte(c),
-            _ => format!("{} ", c as char),
-        })
-        .for_each(|s| {
-            result.push_str(s.as_str());
-            column += 1;
-            if column == COLUMNS {
-                result.push('\n');
-                column = 0;
-            }
-        });
+    bytes.iter().map(|b| render_unicode_byte(*b)).for_each(|s| {
+        result.push_str(s.as_str());
+        column += 1;
+        if column == COLUMNS {
+            result.push('\n');
+            column = 0;
+        }
+    });
     result
 }
 
