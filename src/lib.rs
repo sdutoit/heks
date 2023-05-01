@@ -359,7 +359,7 @@ impl App {
     fn on_key(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Char('l')) | (KeyModifiers::NONE, KeyCode::Right) => {
-                self.cursor_stack.top_mut().increment(1);
+                self.cursor_stack.top_mut().increment(1)
             }
 
             (KeyModifiers::NONE, KeyCode::Char('h')) | (KeyModifiers::NONE, KeyCode::Left) => {
@@ -375,13 +375,8 @@ impl App {
                 }
             }
 
-            (KeyModifiers::SHIFT, KeyCode::Char('L')) => {
-                self.cursor_stack.top_mut().grow();
-            }
-
-            (KeyModifiers::SHIFT, KeyCode::Char('H')) => {
-                self.cursor_stack.top_mut().shrink();
-            }
+            (KeyModifiers::SHIFT, KeyCode::Char('L')) => self.cursor_stack.top_mut().grow(),
+            (KeyModifiers::SHIFT, KeyCode::Char('H')) => self.cursor_stack.top_mut().shrink(),
 
             (KeyModifiers::NONE, KeyCode::Tab)
             | (
