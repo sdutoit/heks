@@ -22,7 +22,7 @@ trying to inspect.
 Beyond that, 𝒽𝑒𝓀𝓈 aims to:
 
 - [x] Display arbitrarily large files that can be memory-mapped
-- [x] Columnar hexadecimal display similar to `xxd`
+- [x] Show a columnar hexadecimal display similar to `xxd`
 - [x] Display hex representations of non-printable characters using unicode
   characters
 - [x] Scroll simply and intuitively with `⇦`, `⇨`, `⇧`, `⇩` as well as vi-like
