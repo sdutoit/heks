@@ -3,6 +3,8 @@
 
 𝒽𝑒𝓀𝓈 is a hex viewer that runs in the terminal.
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ![heks screenshot](doc/heks-in-heks.png)
 
 ## Status
