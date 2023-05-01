@@ -24,8 +24,9 @@ jobs:
       with:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         path: |
-          target/debug/deps
           ~/.cargo
+          target/CACHEDIR.TAG
+          target/debug/deps
     - name: Build
       run: cargo build --verbose
     - name: Run tests
