@@ -80,7 +80,7 @@ impl Cursor {
 }
 
 #[cfg(test)]
-mod tests {
+mod cursor_tests {
     use super::*;
 
     #[test]
@@ -321,5 +321,151 @@ mod tests {
         let mut c = Cursor::new(u64::MAX - 4, u64::MAX);
         c.clamp(128u64..256u64);
         assert_eq!(c, Cursor::new(252u64, 256u64));
+    }
+}
+
+#[derive(Debug)]
+pub struct CursorStack {
+    cursors: Vec<Cursor>,
+    undo_depth: usize,
+}
+
+impl CursorStack {
+    pub fn new(cursor: Cursor) -> Self {
+        CursorStack {
+            cursors: vec![cursor],
+            undo_depth: 0,
+        }
+    }
+
+    pub fn push(&mut self, cursor: Cursor) {
+        self.cursors.push(cursor);
+    }
+
+    fn top_index(&self) -> usize {
+        // We should never allow cursors to go empty.
+        assert!(!self.cursors.is_empty());
+        let index = self.cursors.len() - 1;
+        // We should never allow the undo depth to exceed the stack size.
+        assert!(self.undo_depth <= index);
+        index - self.undo_depth
+    }
+
+    pub fn top(&self) -> Cursor {
+        self.cursors[self.top_index()].clone()
+    }
+
+    pub fn top_mut(&mut self) -> &mut Cursor {
+        let index = self.top_index();
+        self.cursors.get_mut(index).unwrap()
+    }
+
+    pub fn undo(&mut self) {
+        if self.undo_depth < self.cursors.len() - 1 {
+            self.undo_depth += 1;
+        }
+    }
+
+    pub fn redo(&mut self) {
+        self.undo_depth = self.undo_depth.saturating_sub(1);
+    }
+
+    pub fn set(&mut self, cursor: Cursor) {
+        self.cursors.truncate(self.top_index());
+        self.undo_depth = 0;
+        self.cursors.push(cursor);
+    }
+}
+
+#[cfg(test)]
+mod cursor_stack_tests {
+    use super::*;
+
+    #[test]
+    fn test_new() {
+        let stack = CursorStack::new(Cursor::new(0, 1));
+        assert_eq!(stack.cursors, vec![Cursor::new(0, 1)]);
+    }
+
+    #[test]
+    fn test_push_top_undo_redo() {
+        let mut stack = CursorStack::new(Cursor::new(0, 1));
+        assert_eq!(stack.top(), Cursor::new(0, 1));
+
+        stack.push(Cursor::new(1, 2));
+        assert_eq!(stack.top(), Cursor::new(1, 2));
+        stack.push(Cursor::new(3, 4));
+        assert_eq!(stack.top(), Cursor::new(3, 4));
+
+        stack.undo();
+        assert_eq!(stack.top(), Cursor::new(1, 2));
+        stack.undo();
+        assert_eq!(stack.top(), Cursor::new(0, 1));
+        stack.undo();
+        stack.undo();
+        assert_eq!(stack.top(), Cursor::new(0, 1));
+        stack.redo();
+        assert_eq!(stack.top(), Cursor::new(1, 2));
+        stack.redo();
+        assert_eq!(stack.top(), Cursor::new(3, 4));
+        stack.redo();
+        stack.redo();
+        stack.redo();
+        assert_eq!(stack.top(), Cursor::new(3, 4));
+    }
+
+    #[test]
+    fn test_set() {
+        let mut stack = CursorStack::new(Cursor::new(0, 1));
+        assert_eq!(stack.top(), Cursor::new(0, 1));
+        stack.set(Cursor::new(1, 2));
+        assert_eq!(stack.top(), Cursor::new(1, 2));
+        stack.set(Cursor::new(2, 3));
+        assert_eq!(stack.top(), Cursor::new(2, 3));
+        stack.undo();
+        assert_eq!(stack.top(), Cursor::new(2, 3));
+
+        stack.push(Cursor::new(3, 4));
+        stack.push(Cursor::new(5, 6));
+        stack.set(Cursor::new(5, 16));
+        assert_eq!(stack.top(), Cursor::new(5, 16));
+        stack.undo();
+        assert_eq!(stack.top(), Cursor::new(3, 4));
+        stack.undo();
+        assert_eq!(stack.top(), Cursor::new(2, 3));
+
+        stack.set(Cursor::new(2, 12));
+        assert_eq!(stack.top(), Cursor::new(2, 12));
+        stack.redo();
+        assert_eq!(stack.top(), Cursor::new(2, 12));
+        assert_eq!(stack.cursors.len(), 1);
+    }
+
+    #[test]
+    fn test_top_mut() {
+        let mut stack = CursorStack::new(Cursor::new(0, 1));
+        assert_eq!(stack.top(), Cursor::new(0, 1));
+        stack.top_mut().grow();
+        assert_eq!(stack.top(), Cursor::new(0, 2));
+        stack.top_mut().grow();
+        assert_eq!(stack.top(), Cursor::new(0, 3));
+        stack.undo();
+        assert_eq!(stack.top(), Cursor::new(0, 3));
+
+        stack.push(Cursor::new(1, 2));
+        stack.push(Cursor::new(2, 3));
+        stack.top_mut().grow();
+        assert_eq!(stack.top(), Cursor::new(2, 4));
+        stack.undo();
+        assert_eq!(stack.top(), Cursor::new(1, 2));
+        stack.undo();
+        assert_eq!(stack.top(), Cursor::new(0, 3));
+
+        stack.top_mut().grow();
+        assert_eq!(stack.top(), Cursor::new(0, 4));
+        stack.redo();
+        assert_eq!(stack.top(), Cursor::new(1, 2));
+        stack.redo();
+        assert_eq!(stack.top(), Cursor::new(2, 4));
     }
 }

@@ -31,7 +31,7 @@ Beyond that, 𝒽𝑒𝓀𝓈 aims to:
       `⇧`+`🄻` (shift+L) respectively.
 - [x] Jump around with `⇞` (page up) and `⇟` (page down) as well as `⇱` (home)
   and `⇲` (end)
-- [ ] Provide a stack of locations to jump back through
+- [x] Provide a stack of locations to jump back through
 - [ ] Interpret groups of bytes as (big/little endian) integers
 - [ ] Highlight consecutive ASCII strings
 - [ ] Mark up sections of the file with names and type information

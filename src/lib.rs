@@ -2,7 +2,8 @@ pub mod cursor;
 pub mod source;
 pub mod terminal;
 
-use crate::cursor::Cursor;
+use crate::cursor::{Cursor, CursorStack};
+use crate::terminal::color;
 use crossterm::event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers};
 use log::debug;
 use nix::{sys::signal, unistd::getpid};
@@ -21,8 +22,6 @@ use tui::{
     widgets::{Block, Paragraph, Widget},
     Frame, Terminal,
 };
-
-use crate::terminal::color;
 
 #[derive(Clone)]
 struct HexDisplay {
@@ -232,8 +231,9 @@ pub struct App {
     source: Box<dyn DataSource>,
     hex_display: HexDisplay,
     unicode_display: UnicodeDisplay,
-    cursor: Cursor,
+    cursor_stack: CursorStack,
     display_height: u16, // Number of rows in the content displays
+    last_key: Option<KeyEvent>,
 }
 
 impl App {
@@ -259,8 +259,9 @@ impl App {
             source,
             hex_display,
             unicode_display,
-            cursor: Cursor { start: 0, end: 1 },
+            cursor_stack: CursorStack::new(Cursor::new(0, 1)),
             display_height: 0,
+            last_key: None,
         })
     }
 
@@ -306,7 +307,8 @@ impl App {
         // the source further down, but for now let's not make any assumptions
         // about it. For example, it may have been set to u64::MAX to skip to
         // the end.
-        let pos = self.cursor.start().min(u64::MAX - ui_columns * ui_rows);
+        let mut cursor = self.cursor_stack.top();
+        let pos = cursor.start().min(u64::MAX - ui_columns * ui_rows);
         let column_zero_pos: u64 = pos.saturating_sub(pos % ui_columns);
 
         let pos_row = column_zero_pos / ui_columns;
@@ -318,13 +320,14 @@ impl App {
         let slice = self.source.fetch(ui_first_pos, ui_view_end);
         let slice = slice.align_up(COLUMNS as u64);
 
-        self.cursor.clamp(slice.location.clone());
+        cursor.clamp(slice.location.clone());
+        *self.cursor_stack.top_mut() = cursor;
 
-        self.hex_display.cursor = self.cursor;
+        self.hex_display.cursor = cursor;
         self.hex_display
             .set_data(slice.data.to_vec(), slice.location.start);
 
-        self.unicode_display.cursor = self.cursor;
+        self.unicode_display.cursor = cursor;
         self.unicode_display
             .set_data(slice.data.to_vec(), slice.location.start);
 
@@ -338,31 +341,46 @@ impl App {
         f.render_widget(footer, stack[2]);
     }
 
+    fn push_cursor_if_key_changed_else_set<F>(&mut self, key: &KeyEvent, f: F)
+    where
+        F: FnOnce(&mut Cursor) -> (),
+    {
+        let mut cursor = self.cursor_stack.top();
+
+        f(&mut cursor);
+
+        if self.last_key == Some(*key) {
+            *self.cursor_stack.top_mut() = cursor;
+        } else {
+            self.cursor_stack.push(cursor);
+        }
+    }
+
     fn on_key(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Char('l')) | (KeyModifiers::NONE, KeyCode::Right) => {
-                self.cursor.increment(1);
+                self.cursor_stack.top_mut().increment(1);
             }
 
             (KeyModifiers::NONE, KeyCode::Char('h')) | (KeyModifiers::NONE, KeyCode::Left) => {
-                self.cursor.decrement(1);
+                self.cursor_stack.top_mut().decrement(1);
             }
             (KeyModifiers::NONE, KeyCode::Char('j')) | (KeyModifiers::NONE, KeyCode::Down) => {
-                self.cursor.increment(COLUMNS.into());
+                self.cursor_stack.top_mut().increment(COLUMNS.into());
             }
 
             (KeyModifiers::NONE, KeyCode::Char('k')) | (KeyModifiers::NONE, KeyCode::Up) => {
-                if self.cursor.start() >= COLUMNS.into() {
-                    self.cursor.decrement(COLUMNS.into());
+                if self.cursor_stack.top().start() >= COLUMNS.into() {
+                    self.cursor_stack.top_mut().decrement(COLUMNS.into());
                 }
             }
 
             (KeyModifiers::SHIFT, KeyCode::Char('L')) => {
-                self.cursor.grow();
+                self.cursor_stack.top_mut().grow();
             }
 
             (KeyModifiers::SHIFT, KeyCode::Char('H')) => {
-                self.cursor.shrink();
+                self.cursor_stack.top_mut().shrink();
             }
 
             (KeyModifiers::NONE, KeyCode::Tab)
@@ -370,7 +388,7 @@ impl App {
                 KeyModifiers::ALT,
                 KeyCode::Char('f'), // Should be KeyCode::Right, but that's what I get from crossterm..
             ) => {
-                self.cursor.skip_right();
+                self.cursor_stack.top_mut().skip_right();
             }
 
             (KeyModifiers::SHIFT, KeyCode::BackTab)
@@ -378,25 +396,44 @@ impl App {
                 KeyModifiers::ALT,
                 KeyCode::Char('b'), // Should be KeyCode::Left, but that's what I get from crossterm..
             ) => {
-                self.cursor.skip_left();
+                self.cursor_stack.top_mut().skip_left();
             }
 
-            (KeyModifiers::NONE, KeyCode::PageDown) => self
-                .cursor
-                .increment(COLUMNS as u64 * (self.display_height as u64 / 2)),
+            (KeyModifiers::NONE, KeyCode::PageDown) => {
+                let page_size = COLUMNS as u64 * (self.display_height as u64 / 2);
+                self.push_cursor_if_key_changed_else_set(&key, |cursor| {
+                    cursor.increment(page_size)
+                });
+            }
 
-            (KeyModifiers::NONE, KeyCode::PageUp) => self
-                .cursor
-                .decrement(COLUMNS as u64 * (self.display_height as u64 / 2)),
+            (KeyModifiers::NONE, KeyCode::PageUp) => {
+                let page_size = COLUMNS as u64 * (self.display_height as u64 / 2);
+                self.push_cursor_if_key_changed_else_set(&key, |cursor| {
+                    cursor.decrement(page_size)
+                });
+            }
 
-            (KeyModifiers::NONE, KeyCode::Home) => self.cursor.decrement(u64::MAX),
+            (KeyModifiers::NONE, KeyCode::Home) => {
+                let mut cursor = self.cursor_stack.top().clone();
+                cursor.decrement(u64::MAX);
+                self.cursor_stack.push(cursor);
+            }
 
-            (KeyModifiers::NONE, KeyCode::End) => self.cursor.increment(u64::MAX),
+            (KeyModifiers::NONE, KeyCode::End) => {
+                let mut cursor = self.cursor_stack.top().clone();
+                cursor.increment(u64::MAX);
+                self.cursor_stack.push(cursor);
+            }
+
+            (KeyModifiers::NONE, KeyCode::Char('z')) => self.cursor_stack.undo(),
+            (KeyModifiers::SHIFT, KeyCode::Char('Z')) => self.cursor_stack.redo(),
 
             (_, _) => {
                 debug!("key event: {:?}", key);
             }
         };
+
+        self.last_key = Some(key);
     }
 }
 
