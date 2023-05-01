@@ -10,6 +10,8 @@
 𝒽𝑒𝓀𝓈 is currently under development. It supports basic loading and display
 of files, but not much more. It's probably full of [bugs](https://github.com/sdutoit/heks/issues).
 
+[![cargo test](https://github.com/sdutoit/heks/actions/workflows/rust.yml/badge.svg)](https://github.com/sdutoit/heks/actions/workflows/rust.yml)
+
 ## Goals
 
 𝒽𝑒𝓀𝓈 runs in the terminal, so you can run it wherever the files are you are
