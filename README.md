@@ -5,7 +5,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-![heks screenshot](doc/heks-in-heks.png)
+![heks screenshot](doc/heks-rainbow.png)
 
 ## Status
 

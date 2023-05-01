@@ -16,7 +16,9 @@ use std::{
     sync::{atomic::AtomicBool, Arc, Mutex},
     time::Duration,
 };
+use terminal::color_hsl;
 use tokio::time::{sleep_until, Instant};
+use tui::text::{Span, Spans};
 use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -88,7 +90,7 @@ impl App {
 
         let header = Block::default()
             .style(style_frame)
-            .title(self.source.name())
+            .title(format!("{} - {}", self.source.name(), "𝓱𝓮𝓴𝓼"))
             .title_alignment(Alignment::Center);
         f.render_widget(header, stack[0]);
 
@@ -132,11 +134,43 @@ impl App {
         f.render_widget(self.hex_display.clone(), display_areas[0]);
         f.render_widget(self.unicode_display.clone(), display_areas[1]);
 
+        let rainbow = self.rainbow(stack[2].width as usize);
         let footer = Block::default()
             .style(style_frame)
-            .title("🧹 𝓱𝓮𝓴𝓼 🧹")
+            .title(rainbow)
             .title_alignment(Alignment::Center);
         f.render_widget(footer, stack[2]);
+    }
+
+    fn rainbow<'a>(&self, width: usize) -> Spans<'a> {
+        let mut result: Vec<Span> = vec![];
+
+        let fraction = self.source.fraction(self.cursor_stack.top().start);
+
+        let broom_start = (fraction * ((width - 2) as f64)) as usize;
+        let broom_start = broom_start.clamp(0, width.saturating_sub(2));
+        // assume that '🧹' takes up the same horizontal space as two regular characters
+        const BROOM_WIDTH: usize = 2;
+        for i in 0..width {
+            let hue = i as f64 * 360.0 / (width - 1).max(1) as f64 + fraction * 180.0;
+            let saturation = 1.0;
+            let lightness = 0.5;
+            let fg = color_hsl(hue, saturation, lightness);
+            let bg = color_hsl(hue + 0.0, saturation, 0.1);
+
+            let style = Style::default().fg(fg).bg(bg);
+            let invert_style = Style::default().fg(bg).bg(fg);
+
+            if i == broom_start {
+                result.push(Span::styled("🧹", invert_style));
+            } else if i > broom_start && i < broom_start + BROOM_WIDTH {
+                // this space is taken up by the rest of the broom.
+            } else {
+                result.push(Span::styled("▓", style));
+            };
+        }
+
+        Spans::from(result)
     }
 
     fn push_cursor_if_key_changed_else_set<F>(&mut self, key: &KeyEvent, f: F)

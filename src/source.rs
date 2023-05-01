@@ -27,6 +27,8 @@ impl<'a> Slice<'a> {
 pub trait DataSource {
     fn name(&self) -> &str;
     fn fetch(&mut self, start: u64, end: u64) -> Slice;
+
+    fn fraction(&self, index: u64) -> f64;
 }
 
 struct DebugSource {
@@ -51,11 +53,17 @@ impl DataSource for DebugSource {
     fn name(&self) -> &str {
         "debug"
     }
+
     fn fetch(&mut self, _offset: u64, _end: u64) -> Slice {
         Slice {
             data: self.buffer,
             location: 0..self.buffer.len() as u64,
         }
+    }
+
+    fn fraction(&self, index: u64) -> f64 {
+        let max = (self.buffer.len() - 1) as u64;
+        index.clamp(0, max) as f64 / max as f64
     }
 }
 
@@ -116,6 +124,15 @@ impl DataSource for FileSource {
                 data: &[],
                 location: range,
             }
+        }
+    }
+
+    fn fraction(&self, index: u64) -> f64 {
+        let len = self.mmap.len() as u64;
+        if len == 0 {
+            0.5
+        } else {
+            index.clamp(0, len - 1) as f64 / (len - 1) as f64
         }
     }
 }

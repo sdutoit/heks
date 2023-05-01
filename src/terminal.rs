@@ -12,6 +12,11 @@ pub fn color(r: u8, g: u8, b: u8) -> tui::style::Color {
     tui::style::Color::Indexed(pastel::Color::from_rgb(r, g, b).to_ansi_8bit())
 }
 
+pub fn color_hsl(hue: f64, saturation: f64, lightness: f64) -> tui::style::Color {
+    // TODO: Just use Color::RGB if the terminal supports it.
+    tui::style::Color::Indexed(pastel::Color::from_hsl(hue, saturation, lightness).to_ansi_8bit())
+}
+
 pub struct TerminalSetup {}
 
 impl TerminalSetup {
