@@ -10,8 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build_and_test:
+    runs-on: [ubuntu-latest, macos-latest]
     steps:
     - uses: actions/checkout@v3
     - name: Cache cargo deps
@@ -22,6 +22,7 @@ jobs:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
         path: |
           target/debug/deps
+          ~/.cargo
     - name: Build
       run: cargo build --verbose
     - name: Run tests
