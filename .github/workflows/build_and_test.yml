@@ -17,16 +17,6 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
     - uses: actions/checkout@v3
-    - name: Cache cargo deps
-      uses: actions/cache@v1.2.1
-      env:
-        cache-name: cache-deps
-      with:
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/Cargo.lock') }}
-        path: |
-          ~/.cargo
-          target/CACHEDIR.TAG
-          target/debug/deps
     - name: Build
       run: cargo build --verbose
     - name: Run tests
