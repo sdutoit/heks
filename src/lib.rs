@@ -295,7 +295,7 @@ impl App {
 
         let display_areas = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
             .split(stack[1]);
 
         let ui_columns = COLUMNS as u64;
