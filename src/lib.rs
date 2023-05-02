@@ -11,7 +11,7 @@ use display::COLUMNS;
 use itertools::Itertools;
 use log::debug;
 use nix::{sys::signal, unistd::getpid};
-use source::DataSource;
+use source::{DataSource, Slice};
 use std::{
     io,
     sync::{atomic::AtomicBool, Arc, Mutex},
@@ -19,6 +19,7 @@ use std::{
 };
 use terminal::color_hsl;
 use tokio::time::{sleep_until, Instant};
+use tui::layout::Rect;
 use tui::text::{Span, Spans};
 use tui::{
     backend::Backend,
@@ -98,13 +99,8 @@ impl App {
             .title_alignment(Alignment::Center);
         f.render_widget(header, area_header);
 
-        let display_areas = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(area_display);
-
         let ui_columns = COLUMNS as u64;
-        self.display_height = display_areas[0].height;
+        self.display_height = area_display.height;
         let ui_rows = self.display_height as u64;
 
         // We'll clamp the cursor to within the slice we managed to fetch from
@@ -127,16 +123,14 @@ impl App {
         cursor.clamp(slice.location.clone());
         *self.cursor_stack.top_mut() = cursor;
 
-        self.hex_display.cursor = cursor;
-        self.hex_display
-            .set_data(slice.data.to_vec(), slice.location.start);
-
-        self.unicode_display.cursor = cursor;
-        self.unicode_display
-            .set_data(slice.data.to_vec(), slice.location.start);
-
-        f.render_widget(self.hex_display.clone(), display_areas[0]);
-        f.render_widget(self.unicode_display.clone(), display_areas[1]);
+        App::paint_display(
+            f,
+            area_display,
+            self.hex_display.clone(),
+            self.unicode_display.clone(),
+            cursor,
+            slice,
+        );
 
         let rainbow = self.rainbow(area_footer.width as usize);
         let footer = Block::default()
@@ -144,6 +138,29 @@ impl App {
             .title(rainbow)
             .title_alignment(Alignment::Center);
         f.render_widget(footer, area_footer);
+    }
+
+    fn paint_display<B: Backend>(
+        f: &mut Frame<B>,
+        area: Rect,
+        mut hex_display: HexDisplay,
+        mut unicode_display: UnicodeDisplay,
+        cursor: Cursor,
+        slice: Slice,
+    ) {
+        let display_areas = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+            .split(area);
+
+        hex_display.cursor = cursor;
+        hex_display.set_data(slice.data.to_vec(), slice.location.start);
+
+        unicode_display.cursor = cursor;
+        unicode_display.set_data(slice.data.to_vec(), slice.location.start);
+
+        f.render_widget(hex_display, display_areas[0]);
+        f.render_widget(unicode_display, display_areas[1]);
     }
 
     fn rainbow<'a>(&self, width: usize) -> Spans<'a> {
