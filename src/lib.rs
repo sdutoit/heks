@@ -8,6 +8,7 @@ use crate::display::{HexDisplay, UnicodeDisplay};
 use crate::terminal::color;
 use crossterm::event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers};
 use display::COLUMNS;
+use itertools::Itertools;
 use log::debug;
 use nix::{sys::signal, unistd::getpid};
 use source::DataSource;
@@ -76,7 +77,7 @@ impl App {
             .bg(color(0, 0, 192))
             .fg(color(224, 224, 224));
 
-        let stack = Layout::default()
+        let (area_header, area_display, area_footer) = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
                 [
@@ -86,18 +87,21 @@ impl App {
                 ]
                 .as_ref(),
             )
-            .split(f.size());
+            .split(f.size())
+            .into_iter()
+            .collect_tuple()
+            .unwrap();
 
         let header = Block::default()
             .style(style_frame)
             .title(format!("{} - {}", self.source.name(), "𝓱𝓮𝓴𝓼"))
             .title_alignment(Alignment::Center);
-        f.render_widget(header, stack[0]);
+        f.render_widget(header, area_header);
 
         let display_areas = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(stack[1]);
+            .split(area_display);
 
         let ui_columns = COLUMNS as u64;
         self.display_height = display_areas[0].height;
@@ -134,12 +138,12 @@ impl App {
         f.render_widget(self.hex_display.clone(), display_areas[0]);
         f.render_widget(self.unicode_display.clone(), display_areas[1]);
 
-        let rainbow = self.rainbow(stack[2].width as usize);
+        let rainbow = self.rainbow(area_footer.width as usize);
         let footer = Block::default()
             .style(style_frame)
             .title(rainbow)
             .title_alignment(Alignment::Center);
-        f.render_widget(footer, stack[2]);
+        f.render_widget(footer, area_footer);
     }
 
     fn rainbow<'a>(&self, width: usize) -> Spans<'a> {
@@ -167,7 +171,7 @@ impl App {
                 // this space is taken up by the rest of the broom.
             } else {
                 result.push(Span::styled("▓", style));
-            };
+            }
         }
 
         Spans::from(result)
