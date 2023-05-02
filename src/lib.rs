@@ -99,36 +99,21 @@ impl App {
             .title_alignment(Alignment::Center);
         f.render_widget(header, area_header);
 
-        let ui_columns = COLUMNS as u64;
         self.display_height = area_display.height;
-        let ui_rows = self.display_height as u64;
 
-        // We'll clamp the cursor to within the slice we managed to fetch from
-        // the source further down, but for now let's not make any assumptions
-        // about it. For example, it may have been set to u64::MAX to skip to
-        // the end.
-        let mut cursor = self.cursor_stack.top();
-        let pos = cursor.start().min(u64::MAX - ui_columns * ui_rows);
-        let column_zero_pos: u64 = pos.saturating_sub(pos % ui_columns);
-
-        let pos_row = column_zero_pos / ui_columns;
-
-        let ui_pos_row = (ui_rows / 2).min(pos_row);
-        let ui_first_pos = column_zero_pos - ui_pos_row * ui_columns;
-        let ui_view_end = ui_first_pos + ui_rows * ui_columns;
-
-        let slice = self.source.fetch(ui_first_pos, ui_view_end);
-        let slice = slice.align_up(COLUMNS as u64);
-
-        cursor.clamp(slice.location.clone());
-        *self.cursor_stack.top_mut() = cursor;
+        let slice = App::fetch_and_clamp_cursor(
+            &mut self.cursor_stack,
+            self.source.as_mut(),
+            area_display.height,
+            COLUMNS as u16,
+        );
 
         App::paint_display(
             f,
             area_display,
             self.hex_display.clone(),
             self.unicode_display.clone(),
-            cursor,
+            self.cursor_stack.top(),
             slice,
         );
 
@@ -138,6 +123,38 @@ impl App {
             .title(rainbow)
             .title_alignment(Alignment::Center);
         f.render_widget(footer, area_footer);
+    }
+
+    fn fetch_and_clamp_cursor<'a>(
+        cursor_stack: &mut CursorStack,
+        source: &'a mut dyn DataSource,
+        rows: u16,
+        columns: u16,
+    ) -> Slice<'a> {
+        let ui_rows = rows as u64;
+        let ui_columns = columns as u64;
+
+        // We'll clamp the cursor to within the slice we managed to fetch from
+        // the source further down, but for now let's not make any assumptions
+        // about it. For example, it may have been set to u64::MAX to skip to
+        // the end.
+        let mut cursor = cursor_stack.top();
+        let pos = cursor.start().min(u64::MAX - ui_columns * ui_rows);
+        let column_zero_pos: u64 = pos.saturating_sub(pos % ui_columns);
+
+        let pos_row = column_zero_pos / ui_columns;
+
+        let ui_pos_row = (ui_rows / 2).min(pos_row);
+        let ui_first_pos = column_zero_pos - ui_pos_row * ui_columns;
+        let ui_view_end = ui_first_pos + ui_rows * ui_columns;
+
+        let slice = source.fetch(ui_first_pos, ui_view_end);
+        let slice = slice.align_up(COLUMNS as u64);
+
+        cursor.clamp(slice.location.clone());
+        *cursor_stack.top_mut() = cursor;
+
+        slice
     }
 
     fn paint_display<B: Backend>(
