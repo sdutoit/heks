@@ -148,10 +148,13 @@ impl App {
         cursor: Cursor,
         slice: Slice,
     ) {
-        let display_areas = Layout::default()
+        let (hex_area, unicode_area) = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-            .split(area);
+            .split(area)
+            .into_iter()
+            .collect_tuple()
+            .unwrap();
 
         hex_display.cursor = cursor;
         hex_display.set_data(slice.data.to_vec(), slice.location.start);
@@ -159,8 +162,8 @@ impl App {
         unicode_display.cursor = cursor;
         unicode_display.set_data(slice.data.to_vec(), slice.location.start);
 
-        f.render_widget(hex_display, display_areas[0]);
-        f.render_widget(unicode_display, display_areas[1]);
+        f.render_widget(hex_display, hex_area);
+        f.render_widget(unicode_display, unicode_area);
     }
 
     fn rainbow<'a>(&self, width: usize) -> Spans<'a> {
