@@ -20,7 +20,9 @@ use std::{
 use terminal::color_hsl;
 use tokio::time::{sleep_until, Instant};
 use tui::layout::Rect;
+use tui::style::Modifier;
 use tui::text::{Span, Spans};
+use tui::widgets::Paragraph;
 use tui::{
     backend::Backend,
     layout::{Alignment, Constraint, Direction, Layout},
@@ -78,12 +80,13 @@ impl App {
             .bg(color(0, 0, 192))
             .fg(color(224, 224, 224));
 
-        let (area_header, area_display, area_footer) = Layout::default()
+        let (area_header, area_display, area_info, area_footer) = Layout::default()
             .direction(Direction::Vertical)
             .constraints(
                 [
                     Constraint::Length(1),
                     Constraint::Min(1),
+                    Constraint::Length(1),
                     Constraint::Length(1),
                 ]
                 .as_ref(),
@@ -115,6 +118,8 @@ impl App {
             self.cursor_stack.top(),
             slice,
         );
+
+        App::paint_info(f, area_info, self.cursor_stack.top(), slice);
 
         let location = self.source.fraction(self.cursor_stack.top().start);
 
@@ -152,7 +157,7 @@ impl App {
         let slice = source.fetch(ui_first_pos, ui_view_end);
         let slice = slice.align_up(COLUMNS as u64);
 
-        cursor.clamp(slice.location.clone());
+        cursor.clamp(slice.location_start..slice.location_end);
         *cursor_stack.top_mut() = cursor;
 
         slice
@@ -175,13 +180,84 @@ impl App {
             .unwrap();
 
         hex_display.cursor = cursor;
-        hex_display.set_data(slice.data.to_vec(), slice.location.start);
+        hex_display.set_data(slice.data.to_vec(), slice.location_start);
 
         unicode_display.cursor = cursor;
-        unicode_display.set_data(slice.data.to_vec(), slice.location.start);
+        unicode_display.set_data(slice.data.to_vec(), slice.location_start);
 
         f.render_widget(hex_display, hex_area);
         f.render_widget(unicode_display, unicode_area);
+    }
+
+    fn paint_info<B: Backend>(f: &mut Frame<B>, area: Rect, cursor: Cursor, slice: Slice) {
+        // TODO: We should handle > 16 bytes being selected better than just ignoring them
+        let data = slice.fetch(cursor);
+
+        let mut data_unsigned = data.clone();
+        data_unsigned.resize(16, 0);
+
+        let mut data_signed = data;
+        data_signed.resize(
+            16,
+            // TODO this assumes little-endian
+            if data_signed.last().copied().unwrap() & 0x80 != 0 {
+                0xff
+            } else {
+                0x00
+            },
+        );
+
+        // TODO select endianness
+        let as_unsigned = u128::from_le_bytes(data_unsigned.try_into().unwrap());
+        let as_signed = i128::from_le_bytes(data_signed.try_into().unwrap());
+
+        let bg_spacer = color(128, 128, 255);
+        let shadow = color(32, 32, 128);
+        let style_spacer = Style::default().bg(bg_spacer).fg(color(255, 255, 255));
+
+        let bg_label = color(192, 192, 192);
+        let style_label = Style::default()
+            .bg(bg_label)
+            .fg(color(0, 0, 255))
+            .add_modifier(Modifier::BOLD);
+        let style_label_angle = Style::default().bg(bg_spacer).fg(bg_label);
+
+        let bg_field = color(255, 255, 255);
+        let style_field = Style::default().bg(bg_field).fg(color(0, 0, 255));
+        let style_separator = Style::default().bg(bg_label).fg(bg_field);
+        let style_field_angle = Style::default().bg(shadow).fg(bg_field);
+        let style_field_shadow = Style::default().bg(bg_spacer).fg(shadow);
+
+        let line = vec![
+            Span::styled(" ", style_spacer),
+            // cursor
+            Span::styled("▟", style_label_angle),
+            Span::styled(" cursor ", style_label),
+            Span::styled("▟", style_separator),
+            Span::styled(format!(" {:#18x} ", cursor.start), style_field),
+            Span::styled("▛", style_field_angle),
+            Span::styled("▛", style_field_shadow),
+            Span::styled("    ", style_spacer),
+            // signed value
+            Span::styled("▟", style_label_angle),
+            Span::styled(" ± ", style_label),
+            Span::styled("▟", style_separator),
+            Span::styled(format!(" {:21} ", as_signed), style_field),
+            Span::styled("▛", style_field_angle),
+            Span::styled("▛", style_field_shadow),
+            // unsigned value
+            Span::styled("▟", style_label_angle),
+            Span::styled(" + ", style_label),
+            Span::styled("▟", style_separator),
+            Span::styled(format!(" {:20} ", as_unsigned), style_field),
+            Span::styled("▛", style_field_angle),
+            Span::styled("▛", style_field_shadow),
+        ];
+
+        f.render_widget(Block::default().style(style_spacer), area);
+
+        let label = Paragraph::new(Spans::from(line));
+        f.render_widget(label, area);
     }
 
     fn rainbow<'a>(location: f64, width: usize) -> Spans<'a> {

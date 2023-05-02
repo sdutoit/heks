@@ -2,25 +2,40 @@ use memmap2::{Mmap, MmapOptions};
 use std::io::{self, ErrorKind};
 use std::{cmp::min, fs::File, ops::Range, path::PathBuf};
 
-#[derive(Debug)]
+use crate::cursor::Cursor;
+
+#[derive(Debug, Copy, Clone)]
 pub struct Slice<'a> {
     pub data: &'a [u8],
-    pub location: Range<u64>,
+    pub location_start: u64,
+    pub location_end: u64,
 }
 
 impl<'a> Slice<'a> {
     pub fn align_up(&self, align: u64) -> Slice<'a> {
-        let misalignment = self.location.start % align;
+        let misalignment = self.location_start % align;
         let offset = if misalignment > 0 {
             align - misalignment
         } else {
             0
         };
 
-        let location = (self.location.start + offset).min(self.location.end)..self.location.end;
+        let location = (self.location_start + offset).min(self.location_end)..self.location_end;
         let data = &self.data[(offset as usize).min(self.data.len())..];
 
-        Slice { data, location }
+        Slice {
+            data,
+            location_start: location.start,
+            location_end: location.end,
+        }
+    }
+
+    pub fn fetch(&self, mut cursor: Cursor) -> Vec<u8> {
+        cursor.clamp(self.location_start..self.location_end);
+        let range = (cursor.start - self.location_start) as usize
+            ..(cursor.end - self.location_start) as usize;
+
+        self.data[range].to_vec()
     }
 }
 
@@ -57,7 +72,8 @@ impl DataSource for DebugSource {
     fn fetch(&mut self, _offset: u64, _end: u64) -> Slice {
         Slice {
             data: self.buffer,
-            location: 0..self.buffer.len() as u64,
+            location_start: 0,
+            location_end: self.buffer.len() as u64,
         }
     }
 
@@ -117,12 +133,14 @@ impl DataSource for FileSource {
             let range_usize = range.start as usize..range.end as usize;
             Slice {
                 data: self.mmap.get(range_usize).unwrap(),
-                location: range,
+                location_start: range.start,
+                location_end: range.end,
             }
         } else {
             Slice {
                 data: &[],
-                location: range,
+                location_start: range.start,
+                location_end: range.end,
             }
         }
     }

@@ -32,7 +32,9 @@ Beyond that, 𝒽𝑒𝓀𝓈 aims to:
 - [x] Jump around with `⇞` (page up) and `⇟` (page down) as well as `⇱` (home)
   and `⇲` (end)
 - [x] Provide a stack of locations to jump back through
-- [ ] Interpret groups of bytes as (big/little endian) integers
+- [x] Interpret groups of up to 16 bytes as little endian signed/unsigned integers
+- [ ] Interpret bytes as big-endian integers
+- [ ] Interpret bytes as 16/32/64 bit floating point
 - [ ] Highlight consecutive ASCII strings
 - [ ] Mark up sections of the file with names and type information
 - [ ] Store and retrieve bookmarks
