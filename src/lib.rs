@@ -92,14 +92,13 @@ impl App {
             .into_iter()
             .collect_tuple()
             .unwrap();
+        self.display_height = area_display.height;
 
         let header = Block::default()
             .style(style_frame)
             .title(format!("{} - {}", self.source.name(), "𝓱𝓮𝓴𝓼"))
             .title_alignment(Alignment::Center);
         f.render_widget(header, area_header);
-
-        self.display_height = area_display.height;
 
         let slice = App::fetch_and_clamp_cursor(
             &mut self.cursor_stack,
@@ -117,7 +116,9 @@ impl App {
             slice,
         );
 
-        let rainbow = self.rainbow(area_footer.width as usize);
+        let location = self.source.fraction(self.cursor_stack.top().start);
+
+        let rainbow = App::rainbow(location, area_footer.width as usize);
         let footer = Block::default()
             .style(style_frame)
             .title(rainbow)
@@ -183,17 +184,15 @@ impl App {
         f.render_widget(unicode_display, unicode_area);
     }
 
-    fn rainbow<'a>(&self, width: usize) -> Spans<'a> {
+    fn rainbow<'a>(location: f64, width: usize) -> Spans<'a> {
         let mut result: Vec<Span> = vec![];
 
-        let fraction = self.source.fraction(self.cursor_stack.top().start);
-
-        let broom_start = (fraction * ((width - 2) as f64)) as usize;
+        let broom_start = (location * ((width - 2) as f64)) as usize;
         let broom_start = broom_start.clamp(0, width.saturating_sub(2));
         // assume that '🧹' takes up the same horizontal space as two regular characters
         const BROOM_WIDTH: usize = 2;
         for i in 0..width {
-            let hue = i as f64 * 360.0 / (width - 1).max(1) as f64 + fraction * 180.0;
+            let hue = i as f64 * 360.0 / (width - 1).max(1) as f64 + location * 180.0;
             let saturation = 1.0;
             let lightness = 0.5;
             let fg = color_hsl(hue, saturation, lightness);
