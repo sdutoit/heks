@@ -7,6 +7,47 @@
         {
             "type": "lldb",
             "request": "launch",
+            "name": "Debug heks on itself",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=heks",
+                    "--package=heks"
+                ],
+                "filter": {
+                    "name": "heks",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "target/debug/heks"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Optimized heks on itself",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--release",
+                    "--bin=heks",
+                    "--package=heks"
+                ],
+                "filter": {
+                    "name": "heks",
+                    "kind": "bin"
+                }
+            },
+            "args": [
+                "target/release/heks"
+            ],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
             "name": "Debug unit tests in library 'heks'",
             "cargo": {
                 "args": [
