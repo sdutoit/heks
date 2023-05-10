@@ -412,6 +412,7 @@ dependencies = [
  "log-panics",
  "memmap2",
  "nix",
+ "once_cell",
  "pastel",
  "shell-words",
  "tokio",
