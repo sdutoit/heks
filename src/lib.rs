@@ -200,7 +200,7 @@ impl App {
         data_signed.resize(
             16,
             // TODO this assumes little-endian
-            if data_signed.last().copied().unwrap() & 0x80 != 0 {
+            if data_signed.last().copied().unwrap_or(0) & 0x80 != 0 {
                 0xff
             } else {
                 0x00
